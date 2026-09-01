@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+  <!-- Icona app: marchio del Conservatorio (ritaglio del solo tracciato blu,
+       bbox 0.16,0.42 54.85x91.32 nel logo 204x113) su carta calda -->
+  <rect width="512" height="512" fill="#F6F3ED"/>
+  <svg x="161" y="98" width="190" height="316" viewBox="0.16 0.42 54.85 91.32" preserveAspectRatio="xMidYMid meet">
+    <image href="logo-conservatorio.svg" width="204" height="113"/>
+  </svg>
+</svg>
