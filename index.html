@@ -520,31 +520,28 @@ if (/[#&]type=(invite|recovery|signup|magiclink)/.test(location.hash) || /[#&]er
   location.replace('imposta-password.html' + location.hash);
 }
 </script>
-<style>
-  #authGate{position:fixed;inset:0;z-index:999;background:#F2F2F7;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,"Segoe UI",Roboto,sans-serif}
-  #authGate .ag-card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06);width:100%;max-width:380px;padding:32px 28px}
-  #authGate h1{font-size:22px;font-weight:700;letter-spacing:-.4px;margin:0 0 4px}
-  #authGate .ag-sub{font-size:13px;color:rgba(60,60,67,.6);margin:0 0 24px}
-  #authGate label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:rgba(60,60,67,.6);margin:14px 0 5px}
-  #authGate input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;color:#000;background:#fff;border:1px solid rgba(60,60,67,.24);border-radius:10px;padding:11px 12px}
-  #authGate input:focus{outline:none;border-color:#0B6CD9;box-shadow:0 0 0 3px rgba(11,108,217,.12)}
-  #authGate button{width:100%;margin-top:22px;border:0;border-radius:999px;padding:13px;font:inherit;font-size:15px;font-weight:600;color:#fff;cursor:pointer;background:linear-gradient(135deg,#0B6CD9,#3f93e6)}
-  #authGate button:disabled{opacity:.5}
-  #authGate .ag-link{text-align:center;margin-top:16px}
-  #authGate .ag-link a{font-size:13px;color:#0B6CD9;cursor:pointer}
-  #authGate .ag-msg{margin-top:16px;font-size:13.5px;border-radius:10px;padding:11px 13px;display:none}
-  #authGate .ag-msg.show{display:block}
-  #authGate .ag-msg.err{background:rgba(194,86,10,.12);color:#C2560A}
-  #authGate .ag-msg.ok{background:rgba(30,142,62,.12);color:#1E8E3E}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Spectral:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/tema.css">
+<link rel="stylesheet" href="css/tema-controtempo.css">
+<script>
+/* Tema chiaro/scuro applicato PRIMA del primo disegno: scelta salvata in
+   localStorage, altrimenti si segue il sistema (tema.css, brief §3). */
+try{var _t=localStorage.getItem('ctm:tema');if(_t==='dark'||_t==='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}
+</script>
 </head>
 <body>
 <div id="authGate">
-  <div class="ag-card">
-    <h1>Registro presenze</h1>
-    <p class="ag-sub">Accesso riservato · solo su invito</p>
-    <div id="agBox"></div>
+  <div class="auth-card">
+    <div class="logo">
+      <span class="mark" aria-hidden="true" style="font-family:var(--serif);font-style:italic;font-size:17px;color:var(--teal)">♪</span>
+      <span class="word"><b>Registro presenze</b><span>Conservatorio</span></span>
+    </div>
+    <p class="sub">Accesso riservato · solo su invito</p>
+    <div id="agBox" style="text-align:left"></div>
     <div class="ag-msg" id="agMsg"></div>
+    <div class="auth-keys"><div class="keys"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
   </div>
 </div>
 <div id="appRoot" data-theme="light">
@@ -553,6 +550,7 @@ if (/[#&]type=(invite|recovery|signup|magiclink)/.test(location.hash) || /[#&]er
       <div class="brand">
         <div class="mark">Registro</div>
         <div class="sub">Presenze · Conservatorio</div>
+        <div class="keys" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
       </div>
       <nav class="nav" id="nav">
         <button data-v="riepilogo" class="active"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 13h4v8H3zM10 3h4v18h-4zM17 9h4v12h-4z"></path></svg>Riepilogo</button>
@@ -579,10 +577,7 @@ if (/[#&]type=(invite|recovery|signup|magiclink)/.test(location.hash) || /[#&]er
           <h1 id="title">Riepilogo</h1>
         </div>
         <div class="topbar-right">
-          <div class="theme-switch" id="themeSwitch">
-            <button data-theme="light"><span class="sw" style="background:#ffffff"></span>Chiaro</button>
-            <button data-theme="dark"><span class="sw" style="background:#1c1c1e"></span>Scuro</button>
-          </div>
+          <button class="tema-toggle" id="temaToggle" title="Tema chiaro / scuro" aria-label="Cambia tema"><i></i></button>
 
           <div class="balance-chip">
             <span class="lab">Saldo ore</span>
@@ -2945,13 +2940,15 @@ import * as repo from './js/repo.js';
     ];
     const ACTBY = Object.fromEntries(ACT.map(a=>[a.id,a]));
     function actAccent(id){
+      /* palette Controtempo: teal per il lavoro, giallo per i permessi,
+         neutri per il resto (var() così seguono il tema chiaro/scuro) */
       const beh=ACTBY[id]?.beh;
-      if(id==='straordinario')return '#3a5ad6';
-      if(beh==='work')return '#2f6f5e';
-      if(beh==='hour')return '#3a5ad6';
-      if(beh==='day')return '#b56a2a';
-      if(beh==='holiday')return '#15807a';
-      if(beh==='special')return '#8c8775';
+      if(id==='straordinario')return 'var(--teal-700)';
+      if(beh==='work')return 'var(--teal)';
+      if(beh==='hour')return 'var(--yellow)';
+      if(beh==='day')return 'var(--yellow-d)';
+      if(beh==='holiday')return 'var(--ink-soft)';
+      if(beh==='special')return 'var(--segnaposto)';
       return 'transparent';
     }
 
@@ -3249,7 +3246,7 @@ import * as repo from './js/repo.js';
             +'<div class="row"><span class="row__label">Omesse timbrature</span><span class="row__value">'+omessaCount()+'</span></div>'
           +'</div></div>'
           +'<div><div class="group-header">Ultime settimane \u00b7 obbligo '+fmtHM(obl)+'</div><div class="group">'+weekrows+'</div>'
-            +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. Le barre verdi indicano eccedenza.</p></div>'
+            +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa.</p></div>'
         +'</div>'
         +'</div>';
 
@@ -4175,20 +4172,28 @@ import * as repo from './js/repo.js';
 
     document.querySelectorAll('#nav button,#mobnav button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
 
-    /* ---------- Theme switch ---------- */
+    /* ---------- Tema chiaro/scuro (modello Controtempo, brief §3) ----------
+       Tre stati: scelta esplicita salvata (data-theme sull'elemento radice)
+       oppure nessuna scelta = si segue il sistema. */
+    function temaScuroAttivo(){
+      const t=document.documentElement.getAttribute('data-theme');
+      if(t==='dark')return true;
+      if(t==='light')return false;
+      return !!(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);
+    }
     function applyTheme(t){
-      if(t!=='light'&&t!=='dark')t='light';
-      const root=document.getElementById('appRoot');
-      if(root)root.setAttribute('data-theme',t);
-      try{document.documentElement.style.background=(t==='dark'?'#000000':'#F2F2F7');const m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute('content',t==='dark'?'#000000':'#F2F2F7');}catch(e){}
-      document.querySelectorAll('.theme-switch button').forEach(b=>b.classList.toggle('active',b.dataset.theme===t));
-      try{if(typeof localStorage!=='undefined')localStorage.setItem('consba:theme',t);}catch(e){}
+      if(t==='dark'||t==='light'){
+        document.documentElement.setAttribute('data-theme',t);
+        try{localStorage.setItem('ctm:tema',t);}catch(e){}
+      }
+      const scuro=temaScuroAttivo();
+      const m=document.querySelector('meta[name="theme-color"]');
+      if(m)m.setAttribute('content',scuro?'#0B0E0F':'#F6F3ED');
     }
     self._applyTheme=applyTheme;
-    let initTheme='light';
-    try{ initTheme=(self.props&&self.props.theme)||(typeof localStorage!=='undefined'&&localStorage.getItem('consba:theme'))||'light'; }catch(e){}
-    applyTheme(initTheme);
-    document.querySelectorAll('.theme-switch button').forEach(b=>b.onclick=()=>applyTheme(b.dataset.theme));
+    applyTheme();
+    const temaBtn=document.getElementById('temaToggle');
+    if(temaBtn)temaBtn.onclick=()=>applyTheme(temaScuroAttivo()?'light':'dark');
 
     /* ---------- Font switch ---------- */
     function applyFont(f){
@@ -4215,9 +4220,9 @@ import * as repo from './js/repo.js';
     function mostraLogin(){
       agZitto();
       agBox.innerHTML='<form id="agF">'
-        +'<label for="agEmail">Email</label><input id="agEmail" type="email" autocomplete="username" required>'
-        +'<label for="agPw">Password</label><input id="agPw" type="password" autocomplete="current-password" required>'
-        +'<button id="agGo">Accedi</button></form>'
+        +'<div class="field"><label for="agEmail">Email</label><input class="input" id="agEmail" type="email" autocomplete="username" required></div>'
+        +'<div class="field"><label for="agPw">Password</label><input class="input" id="agPw" type="password" autocomplete="current-password" required></div>'
+        +'<button class="btn btn-primary" id="agGo">Entra nel registro</button></form>'
         +'<div class="ag-link"><a id="agLost">Password dimenticata?</a></div>';
       document.getElementById('agF').onsubmit=async ev=>{
         ev.preventDefault(); agZitto();
@@ -4232,8 +4237,8 @@ import * as repo from './js/repo.js';
     function mostraReset(){
       agZitto();
       agBox.innerHTML='<form id="agF">'
-        +'<label for="agEmail">Email dell\'account</label><input id="agEmail" type="email" autocomplete="username" required>'
-        +'<button id="agGo">Invia link di reset</button></form>'
+        +'<div class="field"><label for="agEmail">Email dell\'account</label><input class="input" id="agEmail" type="email" autocomplete="username" required></div>'
+        +'<button class="btn btn-primary" id="agGo">Invia il link di reset</button></form>'
         +'<div class="ag-link"><a id="agBack">← Torna all\'accesso</a></div>';
       document.getElementById('agF').onsubmit=async ev=>{
         ev.preventDefault(); agZitto();
@@ -4253,7 +4258,7 @@ import * as repo from './js/repo.js';
         try{toast('⚠️ Salvataggio non riuscito: controlla la connessione');}catch(_){}
       });
       try{ DB=await repo.loadAll(); }
-      catch(_){ gate.style.display='flex'; agSay('Caricamento dati non riuscito: riprova.','err'); return; }
+      catch(_){ gate.style.display=''; agSay('Caricamento dati non riuscito: riprova.','err'); return; }
       /* primo accesso: semina i diritti/limiti di default del prototipo */
       if(!DB.entitlements.length){
         DB.entitlements=seedData().entitlements;

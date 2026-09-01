@@ -1,0 +1,211 @@
+/* ============================================================================
+   ADATTATORE — Registro timbrature sopra il tema Controtempo (css/tema.css).
+   Il tema ufficiale NON va toccato: qui si fa solo da ponte.
+   1) si catturano i token ufficiali che il registro ombreggia con lo stesso
+      nome (alias a :root, restano reattivi al tema scuro);
+   2) si rimappano i token storici del registro sui token ufficiali;
+   3) si aggiungono le classi/deroghe specifiche delle timbrature.
+   Caricare DOPO lo stile inline dell'app e DOPO css/tema.css.
+   ========================================================================== */
+
+/* ---------- 1. alias dei token ufficiali (nomi in comune col registro) ---- */
+:root{
+  --ctm-carta:var(--paper);        /* superfici */
+  --ctm-linea:var(--line);
+  --ctm-linea-soft:var(--line-soft);
+  --ctm-ink:var(--ink);
+  --ctm-ink-soft:var(--ink-soft);
+  --ctm-ombra:var(--shadow);
+}
+
+/* ---------- 2. rispray dei token del registro ----------------------------- */
+#appRoot,
+#appRoot[data-theme]{
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+
+  --paper:var(--warm);             /* fondo pagina = carta calda */
+  --surface:var(--ctm-carta);      /* superfici */
+  --panel:var(--teal-wash);        /* riempimenti tenui */
+  --rest:var(--velo-hover);
+  --line:var(--ctm-linea);
+  --line-strong:var(--bordo-hover);
+  --ink:var(--ctm-ink);
+  --ink-soft:var(--ctm-ink-soft);
+  --muted:var(--ctm-ink-soft);
+  --side-bg:var(--rail-glass);
+  --bar:var(--glass);
+  --accent:var(--teal);
+  --accent2:var(--teal-700);
+  --accent-soft:var(--teal-wash);
+  --grad:linear-gradient(135deg,var(--teal),var(--teal-700));
+  --pos:var(--teal);   --pos-soft:var(--teal-wash);      /* ok = teal */
+  --neg:var(--yellow-d); --neg-soft:var(--yellow-wash);  /* attenzione = giallo */
+  --on-tint:var(--teal-ink);
+  --shadow:var(--ctm-ombra);
+  --shadow-lg:var(--ctm-ombra);
+}
+#appRoot{
+  background:
+    radial-gradient(900px 520px at 10% -8%, var(--alone-1), transparent 60%),
+    radial-gradient(760px 600px at 100% 0%, var(--alone-2), transparent 55%),
+    var(--warm);
+}
+
+/* ---------- 3a. contro-deroghe: regole del tema che investono classi
+              omonime del registro ------------------------------------------ */
+/* .cal del tema è un'altra griglia: il calendario del registro resta suo */
+#appRoot .cal{display:block;grid-template-columns:none;min-width:660px;position:relative;
+  border:1px solid var(--ctm-linea);border-radius:14px;background:var(--glass-2);overflow:hidden}
+#appRoot .cal .ch{padding:9px 4px;background:transparent;border-bottom:0}
+/* .mono del tema rimpicciolisce e ingrigisce: i numeri del registro no */
+#appRoot .mono{color:inherit;font-size:inherit;letter-spacing:inherit}
+
+/* ---------- 3b. tipografia --------------------------------------------- */
+.topbar h1,.ios .large-title,.sec-h,.modal h3{font-family:var(--serif);font-weight:500;letter-spacing:.2px;color:var(--teal)}
+.topbar h1{font-size:26px}
+.hero .figure,.punch-clock,.stat .n,.ios .day__total,.balance-chip .val,.sheet2 .kpval,.kp-display{
+  font-family:var(--serif);font-weight:500;font-variant-numeric:tabular-nums}
+.hero .figure{letter-spacing:-.5px;color:var(--teal)}
+.punch-clock{background:none;-webkit-background-clip:border-box;background-clip:border-box;
+  -webkit-text-fill-color:currentColor;color:var(--teal)}
+.stat .n{font-size:26px;color:var(--teal)}
+.topbar .crumb,.hero .eyebrow{font-size:11px;letter-spacing:.18em;color:var(--yellow-d);font-weight:600}
+.field label,.mfield label,.ent-table th,.schhead,.wk-summary .blk .l,.balance-chip .lab,
+.share-lbl,.subh,.ios .group-header{letter-spacing:.12em}
+
+/* righello-pentagramma sotto il titolo di pagina (ricetta ufficiale) */
+.topbar h1::after{content:'';display:block;width:190px;max-width:56vw;height:17px;margin-top:8px;
+  background:repeating-linear-gradient(to bottom, var(--ctm-linea) 0, var(--ctm-linea) 1px, transparent 1px, transparent 4px)}
+
+/* ---------- 3c. card in vetro ------------------------------------------- */
+.wk-summary,.perm,.authbox,
+.ios .card,.ios .group,.ios .day,.ios .authbox{
+  background:var(--glass-2);
+  -webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur));
+  border:1px solid var(--ctm-linea);border-radius:14px;box-shadow:var(--ctm-ombra)}
+.ios .day--riposo{background:transparent;box-shadow:none;border:1px dashed var(--ctm-linea)}
+.daylist .day{border-radius:0;border:0;border-top:1px solid var(--ctm-linea);box-shadow:none;
+  background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
+.period{background:var(--velo);border-radius:9px;border-color:var(--ctm-linea)}
+
+/* stat del riepilogo: niente pastelli fuori palette */
+.stat,.stat:nth-child(6n+1),.stat:nth-child(6n+2),.stat:nth-child(6n+3),
+.stat:nth-child(6n+4),.stat:nth-child(6n+5),.stat:nth-child(6n+6){
+  background:var(--ctm-carta);border-color:var(--ctm-linea)}
+
+/* ---------- 3d. bottoni e input ------------------------------------------ */
+.btn,.btn--pill,.ios .btn--pill{border-radius:9px}
+.btn:hover{filter:none;background:var(--teal-700)}
+.btn.ghost{background:transparent;border:1px solid var(--ctm-linea);color:var(--ink)}
+.btn.ghost:hover{background:var(--teal-wash);border-color:var(--bordo-hover)}
+.btn.danger{border:1px solid var(--rosso);color:var(--rosso);background:transparent}
+.btn.danger:hover{background:var(--rosso-cal)}
+.btn.warn{border:1px solid var(--ev-bordo-y);color:var(--yellow-d);background:transparent}
+.btn.warn:hover{background:var(--yellow-wash)}
+.iconbtn{border-radius:9px;background:var(--ctm-carta);border-color:var(--ctm-linea)}
+.iconbtn:hover{background:var(--teal-wash);border-color:var(--bordo-hover)}
+.ios .navbtn{border-radius:9px}
+.ios .ios-btn,.kp-done,.sheet2 .kpdone{border-radius:9px;background:var(--teal);color:var(--teal-ink)}
+.punch-btn{border-radius:9px;font-size:16px}
+
+select,input[type=time],input[type=number],input[type=text],input[type=date],
+.mfield input,.mfield select,.mfield textarea,.auth-num{
+  border-radius:9px;min-height:42px;background:var(--ctm-carta);border:1px solid var(--ctm-linea);color:var(--ink)}
+input::placeholder,textarea::placeholder{color:var(--segnaposto)}
+select:focus,input:focus,textarea:focus,
+.mfield input:focus,.mfield select:focus,.mfield textarea:focus{
+  outline:2px solid var(--yellow);outline-offset:1px;border-color:var(--ctm-linea);box-shadow:none}
+.ios .input--time.is-active{box-shadow:none;outline:2px solid var(--yellow);color:var(--teal)}
+.ios .note,.ios .input--time{background:var(--velo);border-radius:9px}
+
+/* ---------- 3e. sidebar, topbar, navigazione ----------------------------- */
+.side{width:250px;background:var(--rail-glass);
+  -webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur))}
+.brand .mark{font-family:var(--serif);font-weight:600;color:var(--teal);font-size:19px;letter-spacing:.2px}
+.brand .sub{font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-soft)}
+.brand .keys{margin-top:12px;height:10px}
+.nav button{border-radius:9px;position:relative;color:var(--ink);font-size:13.5px}
+.nav button:hover{background:var(--teal-wash);color:var(--ink)}
+.nav button.active{background:var(--ctm-carta);color:var(--ink);font-weight:600;
+  box-shadow:inset 0 0 0 1px var(--ctm-linea-soft)}
+.nav button.active::before{content:"";position:absolute;left:-20px;top:50%;transform:translateY(-50%);
+  width:4px;height:22px;background:var(--yellow);border-radius:0 3px 3px 0}
+.nav button.active .ic{color:var(--teal);opacity:1}
+.topbar{background:var(--glass);
+  -webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur))}
+.balance-chip{background:var(--ctm-carta);border-radius:999px;border-color:var(--ctm-linea)}
+.balance-chip .val{color:var(--teal)}
+
+/* ---------- 3f. esiti, avvisi, badge ------------------------------------- */
+.esito.over{background:var(--teal-wash);color:var(--teal)}
+.esito.under{background:var(--yellow-wash);color:var(--yellow-d)}
+.esito.ok{background:var(--velo);color:var(--ink-soft)}
+.auth-bar{background:var(--yellow-wash);border:1px solid var(--ev-bordo-y);color:var(--yellow-d);border-radius:9px}
+.auth-bar .ab-txt b,.auth-bar .ab-u{color:var(--yellow-d)}
+.auth-bar.done{background:var(--teal-wash);border-color:var(--ev-bordo);color:var(--teal)}
+.auth-bar.done .ab-txt b{color:var(--teal)}
+.today-pill{background:var(--teal);color:var(--teal-ink)}
+.ios .badge--today,.ios .badge--tint{color:var(--teal)}
+.ios .badge--pos{color:var(--teal)} .ios .badge--neg{color:var(--yellow-d)}
+.ok-chip{border-radius:9px;background:var(--teal-wash);color:var(--teal)}
+.study-chip{color:var(--teal);background:var(--teal-wash);border-color:var(--ev-bordo);border-radius:9px}
+.pos{color:var(--teal)} .neg{color:var(--yellow-d)}
+.autobreak,.ios .day__note{color:var(--yellow-d)}
+
+/* barre di avanzamento: inchiostro→teal, traguardo visibile */
+.barrow .fill,.wp-fill,.ios .meter__fill,.perm .fill,.hbar i{background:var(--teal)}
+.barrow .fill.over,.wp-fill.over,.ios .meter__fill--pos{background:var(--teal)}
+.ios .meter__fill--neg{background:var(--yellow)}
+.perm .fill.full{background:var(--yellow)}
+
+/* ---------- 3g. fogli, modali, tastierino -------------------------------- */
+.modal{border-radius:14px;background:var(--glass-2);
+  -webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur))}
+.sheet2{background:var(--glass-2);-webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur));
+  border-radius:14px 14px 0 0;box-shadow:0 -1px 0 var(--ctm-linea),0 -20px 40px rgba(0,30,38,.25)}
+.sheet2 .kpgrid button{border-radius:9px;background:var(--velo);color:var(--ink)}
+.sheet2 .kpnow{background:var(--yellow-wash);color:var(--yellow-d);border-radius:9px}
+.sheet2 .kpval{color:var(--teal)}
+.toast{background:var(--teal);color:var(--teal-ink);border-radius:9px}
+.mobnav{background:var(--glass);
+  -webkit-backdrop-filter:blur(var(--blur));backdrop-filter:blur(var(--blur))}
+.mobnav button.active{color:var(--teal)}
+
+/* eventi del calendario attività: ricetta "lezione" del gestionale */
+#appRoot .event{border-radius:7px;box-shadow:none;border:1px solid var(--ev-bordo)}
+/* bande presenza/studio del calendario nei colori ufficiali */
+#appRoot .cal-band.pres{background:var(--teal-wash);border-top:2px solid var(--ev-bordo);border-bottom:2px solid var(--ev-bordo)}
+#appRoot .cal-band.study{background:var(--yellow-wash);border-top:2px solid var(--ev-bordo-y);border-bottom:2px solid var(--ev-bordo-y)}
+.lg-dot.pres{background:var(--teal-wash);border:1px solid var(--ev-bordo)}
+.lg-dot.study{background:var(--yellow-wash);border:1px solid var(--ev-bordo-y)}
+
+/* ---------- 3i. mobile-first: compattezze sotto i 760px -------------------- */
+@media (max-width:760px){
+  .schhead,.schrow,.period .schhead,.period .schrow{grid-template-columns:34px 58px 1fr 54px;gap:6px}
+  .scht{min-height:38px;padding:8px 3px;font-size:13px}
+  .scht::-webkit-calendar-picker-indicator{display:none}
+  .schoro{min-width:44px;padding:6px 3px;font-size:12px}
+  .schpzin{width:44px;min-height:38px;padding:6px 2px}
+  .topbar h1::after{width:150px}
+  /* brief §5: le tabelle larghe scorrono orizzontalmente DENTRO la card */
+  .period{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .period .schhead,.period .schrow{min-width:400px}
+}
+
+/* ---------- 3h. cancello di accesso -------------------------------------- */
+#authGate{position:fixed;inset:0;z-index:999;display:grid;place-items:center;padding:24px;
+  font-family:var(--sans);color:var(--ink);
+  background:
+    radial-gradient(900px 520px at 10% -8%, var(--alone-1), transparent 60%),
+    radial-gradient(760px 600px at 100% 0%, var(--alone-2), transparent 55%),
+    var(--warm)}
+#authGate .auth-card{text-align:center}
+#authGate .field{margin-bottom:14px}
+#authGate .btn{width:100%;margin-top:6px}
+#authGate .ag-link{margin-top:14px;font-size:13px}
+#authGate .ag-link a{color:var(--teal);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.ag-msg{margin-top:14px;font-size:13px;border-radius:9px;padding:11px 13px;display:none;text-align:left}
+.ag-msg.show{display:flex;gap:10px}
+.ag-msg.err{background:var(--rosso-fondo);border:1px solid var(--rosso);color:var(--rosso)}
+.ag-msg.ok{background:var(--teal-wash);border:1px solid var(--ev-bordo);color:var(--teal)}
