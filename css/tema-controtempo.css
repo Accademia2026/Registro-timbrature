@@ -251,6 +251,7 @@ select:focus,input:focus,textarea:focus,
   padding:8px 0;border-bottom:1px solid var(--ctm-linea-soft);font-size:14px}
 .arow:last-child{border-bottom:0}
 .arow b{font-variant-numeric:tabular-nums}
+.sch-list{max-height:44vh;overflow-y:auto;font-size:13px}
 
 /* ---------- 3l. niente trabocco orizzontale (fascia bianca) --------------- */
 html,body{overflow-x:hidden}

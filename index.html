@@ -541,7 +541,7 @@ try{var _t=localStorage.getItem('ctm:tema');if(_t==='dark'||_t==='light')documen
 <div id="authGate">
   <div class="auth-card">
     <div class="logo">
-      <span class="mark" aria-hidden="true" style="font-family:var(--serif);font-style:italic;font-size:17px;color:var(--teal)">♪</span>
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 55.1 91.8" style="height:22px;width:auto;display:block" fill="var(--teal)" xmlns="http://www.w3.org/2000/svg"><path d="m48.3119531 41.9350781v-41.51648435h-3.6649218v41.51648435c-3.8163282.8460938-6.6975001 4.2571875-6.6975001 8.3184375v41.4897657h3.6649219v-41.4897657c0-2.6807812 2.1820313-4.8628125 4.8672656-4.8628125 2.6807813 0 4.8628126 2.1820313 4.8628126 4.8628125v41.4897657h3.6649218v-41.4897657c0-4.06125-2.8811718-7.4723437-6.6975-8.3184375zm-37.7892187 0v-41.51648435h-3.6649219v41.51648435c-3.81632813.8460938-6.6975 4.2571875-6.6975 8.3184375v41.4897657h3.66492187v-41.4897657c0-2.6807812 2.18203125-4.8628125 4.86726563-4.8628125 2.6807812 0 4.8628125 2.1820313 4.8628125 4.8628125v41.4897657h3.6649219v-41.4897657c0-4.06125-2.8811719-7.4723437-6.6975-8.3184375zm21.9271875-.0222656c0 2.6807813-2.1820313 4.8628125-4.8628125 4.8628125-2.6852344 0-4.8672657-2.1820312-4.8672657-4.8628125v-41.49421875h-3.6649218v41.49421875c0 4.06125 2.8811718 7.4723438 6.6975 8.3184375v41.5120313h3.6649218v-41.5120313c3.8163282-.8460937 6.6975-4.2571875 6.6975-8.3184375v-41.49421875h-3.6649218z"/></svg></span>
       <span class="word"><b>Registro presenze</b><span>Conservatorio</span></span>
     </div>
     <p class="sub">Accesso riservato · solo su invito</p>
@@ -3666,6 +3666,7 @@ import * as repo from './js/repo.js';
       let inner = attTab==='calendario'?calendarHTML():attTab==='ore'?hoursHTML():peopleHTML();
       view.innerHTML=seg+inner;
       view.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{attTab=b.dataset.t;renderAttivita();});
+      view.querySelectorAll('[data-scheda]').forEach(el=>el.onclick=()=>schedaPersona(el.dataset.scheda));
       if(attTab==='calendario')wireCalendar();
       else if(attTab==='persone')wirePeople();
     }
@@ -3883,6 +3884,50 @@ import * as repo from './js/repo.js';
     }
     function closeModal(){modalBg.classList.remove('show');modalBg.innerHTML='';}
 
+    /* ---------- scheda persona: tutte le attività di alunno/docente ------- */
+    function occorrenzePersona(id){
+      const oggi=iso(new Date());
+      const limite=iso(addDays(new Date(),90));
+      const out=[];
+      DB.events.forEach(ev=>{
+        let con=null;
+        if(ev.personId===id) con=null;
+        else if(ev.countTeacher){
+          const st=personById(ev.personId);
+          if(st&&st.teacherId===id) con=st.name; else return;
+        } else return;
+        eventOccurrences(ev,'2000-01-01',limite).forEach(d=>{
+          out.push({d, start:ev.start, end:ev.end, note:ev.note||'', con, fut:d>oggi});
+        });
+      });
+      out.sort((a,b)=>a.d===b.d?(a.start<b.start?-1:1):(a.d<b.d?1:-1));
+      return out;
+    }
+    function schedaPersona(id){
+      const p=personById(id); if(!p)return;
+      const occ=occorrenzePersona(id);
+      const svolte=occ.filter(o=>!o.fut), prossime=occ.filter(o=>o.fut);
+      const minDi=o=>Math.max(0,(t2m(o.end)??0)-(t2m(o.start)??0));
+      const totMin=svolte.reduce((a,o)=>a+minDi(o),0);
+      const dataStr=dISO=>{const d=parseISO(dISO);return DAYNAMES[(d.getDay()+6)%7].slice(0,3)+' '+pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+String(d.getFullYear()).slice(2);};
+      const righe=svolte.slice(0,80).map(o=>'<div class="arow"><span>'+dataStr(o.d)
+          +' <span class="muted">'+o.start+'–'+o.end+'</span>'
+          +(o.con?' <span class="chip-mini">con '+esc(o.con)+'</span>':'')
+          +(o.note?' <span class="muted">· '+esc(o.note)+'</span>':'')
+        +'</span><b class="mono">'+fmtHM(minDi(o))+'</b></div>').join('');
+      const doc=p.role==='alunno'&&p.teacherId&&personById(p.teacherId)?personById(p.teacherId).name:null;
+      modalBg.innerHTML='<div class="modal"><h3><span class="dot" style="background:'+p.color+';display:inline-block;vertical-align:1px;margin-right:8px"></span>'+esc(p.name)+'</h3>'
+        +'<div class="mbody">'
+        +'<p class="mnote" style="margin:0">'+(p.role==='docente'?'Docente':'Alunno')+(doc?' · docente: '+esc(doc):'')+'</p>'
+        +'<div class="arow"><span>Ore svolte</span><b class="mono">'+fmtHM(totMin)+'</b></div>'
+        +'<div class="arow"><span>Sessioni svolte</span><b class="mono">'+svolte.length+'</b></div>'
+        +'<div class="arow"><span>Prossime in calendario</span><b class="mono">'+prossime.length+'</b></div>'
+        +(righe?'<div class="subh" style="margin:10px 0 2px">Attività svolte</div><div class="sch-list">'+righe+'</div>':'<p class="hint">Ancora nessuna attività svolta.</p>')
+        +'</div><div class="mfoot"><span class="spacer"></span><button class="btn" id="schClose">Chiudi</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('schClose').onclick=closeModal;
+    }
+
     function hoursHTML(){
       if(!DB.people.length)return '<p class="hint">Nessuna persona ancora. Aggiungila dalla scheda <b>Persone</b> o creando un\'attività nel calendario.</p>';
       const today=iso(new Date());
@@ -3903,7 +3948,7 @@ import * as repo from './js/repo.js';
         if(!rs.length)return '';
         return '<div class="subh">'+(role==='docente'?'Docenti':'Alunni')+'</div>'+rs.map(d=>'<div class="hours-row">'
             +'<div class="who-wrap">'
-              +'<div class="who"><span class="dot" style="background:'+d.p.color+'"></span><b>'+esc(d.p.name)+'</b>'+(d.p.role==='alunno'&&d.p.teacherId&&personById(d.p.teacherId)?'<span class="who-sub">→ '+esc(personById(d.p.teacherId).name)+'</span>':'')+'</div>'
+              +'<div class="who" data-scheda="'+d.p.id+'" style="cursor:pointer"><span class="dot" style="background:'+d.p.color+'"></span><b>'+esc(d.p.name)+'</b>'+(d.p.role==='alunno'&&d.p.teacherId&&personById(d.p.teacherId)?'<span class="who-sub">→ '+esc(personById(d.p.teacherId).name)+'</span>':'')+'</div>'
               +'<div class="hbar"><i style="width:'+(d.mins/max*100||0)+'%;background:'+d.p.color+'"></i></div>'
               +'<div class="meta">'+d.sessions+' '+(d.sessions===1?'sessione svolta':'sessioni svolte')+(d.fromStud?' · di cui '+fmtHM(d.fromStud)+' con alunni':'')+'</div>'
             +'</div>'
@@ -3919,7 +3964,7 @@ import * as repo from './js/repo.js';
       const docOpts=sel=>'<option value="">— nessuno —</option>'+docenti.map(d=>'<option value="'+d.id+'" '+(sel===d.id?'selected':'')+'>'+esc(d.name)+'</option>').join('');
       const list=DB.people.length?DB.people.map(p=>'<div class="ppl-item">'
           +'<span class="dot" style="background:'+p.color+'"></span>'
-          +'<div class="ppl-main"><div class="nm">'+esc(p.name)+'</div><div class="rl">'+p.role+(p.role==='alunno'&&p.teacherId&&personById(p.teacherId)?' · '+esc(personById(p.teacherId).name):'')+'</div></div>'
+          +'<div class="ppl-main" data-scheda="'+p.id+'" style="cursor:pointer"><div class="nm">'+esc(p.name)+'</div><div class="rl">'+p.role+(p.role==='alunno'&&p.teacherId&&personById(p.teacherId)?' · '+esc(personById(p.teacherId).name):'')+'</div></div>'
           +'<span class="sp"></span>'
           +(p.role==='alunno'?'<select class="ppl-teacher" data-setteacher="'+p.id+'" title="Docente associato">'+docOpts(p.teacherId)+'</select>':'')
           +'<button class="linkbtn" data-edit="'+p.id+'">Rinomina</button>'
@@ -3952,8 +3997,16 @@ import * as repo from './js/repo.js';
       view.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
         const id=b.dataset.del;
         if(DB.events.some(e=>e.personId===id)){toast('Elimina prima le attività collegate a questa persona');return;}
-        if(DB.people.some(p=>p.teacherId===id)){toast('Questo docente è associato ad alunni: togli prima l\'associazione');return;}
-        if(confirm('Eliminare questa persona dall\'anagrafica?')){DB.people=DB.people.filter(p=>p.id!==id);repo.deletePersona(id).catch(()=>{});renderAttivita();}
+        const allievi=DB.people.filter(p=>p.teacherId===id);
+        const msg=allievi.length
+          ? 'Eliminare questo docente? '+(allievi.length===1?'Il suo alunno resterà autonomo':'I suoi '+allievi.length+' alunni resteranno autonomi')+' (senza docente associato).'
+          : 'Eliminare questa persona dall\'anagrafica?';
+        if(confirm(msg)){
+          allievi.forEach(a=>{delete a.teacherId; repo.updatePersona(a.id,a).catch(()=>{});});
+          DB.people=DB.people.filter(p=>p.id!==id);
+          repo.deletePersona(id).catch(()=>{});
+          renderAttivita();
+        }
       });
       view.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{
         const p=personById(b.dataset.edit); const nn=prompt('Nome',p.name);
