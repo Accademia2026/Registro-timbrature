@@ -4078,7 +4078,8 @@ import * as repo from './js/repo.js';
         el.querySelectorAll('[data-archdl]').forEach(b=>b.onclick=async()=>{
           try{
             const a=await repo.getArchivio(b.dataset.archdl);
-            const blob=new Blob([JSON.stringify(a.dati,null,2)],{type:'application/json'});
+            /* si scarica l'istantanea DB: è reimportabile con "Importa backup" */
+            const blob=new Blob([JSON.stringify(a.dati&&a.dati.DB||a.dati,null,2)],{type:'application/json'});
             const url=URL.createObjectURL(blob), x=document.createElement('a');
             x.href=url; x.download='registro-archivio-'+String(a.anno_label).replace(/[^0-9a-z]+/gi,'-')+'.json';
             document.body.appendChild(x); x.click(); x.remove();
