@@ -3123,7 +3123,8 @@ import * as repo from './js/repo.js';
       Object.entries(DB.entries).forEach(([d,e])=>{
         if(!hasEntry(e))return;
         const a=ACTBY[e.act];
-        if(a&&a.ent===entId){ used += unit==='GG'?1:(+e.ph||0); }
+        /* GG: un giorno per voce; ORE: e.ph e' in minuti, il monte in ore */
+        if(a&&a.ent===entId){ used += unit==='GG'?1:((+e.ph||0)/60); }
       });
       return used;
     }
@@ -4051,7 +4052,7 @@ import * as repo from './js/repo.js';
         const u=ent.unit==='ORE';
         const f=v=> u? (Number.isInteger(v)?v:v.toFixed(2)) : v;
         const note=ent.id==='ferie_prec'&&ent.total>0?'<div class="perm-note">scalate per prime</div>':'';
-        return '<div class="perm">'
+        return '<div class="perm" data-perm="'+ent.id+'" style="cursor:pointer">'
           +'<div class="top"><span class="name">'+ent.label+'</span><span class="unit">'+ent.unit+'</span></div>'
           +'<div class="track"><div class="fill '+(res<=0?'full':'')+'" style="width:'+pct+'%"></div></div>'
           +'<div class="nums">'
@@ -4062,11 +4063,58 @@ import * as repo from './js/repo.js';
       }).join('');
       view.innerHTML=
         '<h2 class="sec-h">Monte permessi e congedi</h2>'
-        +'<p class="sec-d">Il fruito si aggiorna da solo in base alle attività registrate. Le ferie consumano prima quelle dell’anno precedente, poi quelle in corso. I limiti si modificano in Impostazioni.</p>'
+        +'<p class="sec-d">Il fruito si aggiorna da solo in base alle attività registrate. Le ferie consumano prima quelle dell’anno precedente, poi quelle in corso. Tocca una voce per vedere quando l’hai usata. I limiti si modificano in Impostazioni.</p>'
         +'<div class="perm-grid">'+cards+'</div>'
         +'<div class="divider"></div>'
-        +'<div class="perm" style="max-width:340px"><div class="top"><span class="name">Omesse timbrature</span><span class="unit">conteggio</span></div>'
+        +'<div class="perm" data-perm="__omesse" style="max-width:340px;cursor:pointer"><div class="top"><span class="name">Omesse timbrature</span><span class="unit">conteggio</span></div>'
           +'<div class="nums"><span>registrate nell’anno</span><span class="r mono">'+omessaCount()+'</span></div></div>';
+      view.querySelectorAll('[data-perm]').forEach(c=>c.onclick=()=>schedaPermesso(c.dataset.perm));
+    }
+    /* scheda di un permesso: quando e quanto e' stato usato */
+    function schedaPermesso(entId){
+      const dataStr=dISO=>{const d=parseISO(dISO);return DAYNAMES[(d.getDay()+6)%7].slice(0,3)+' '+pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+String(d.getFullYear()).slice(2);};
+      const riga=(l,v)=>'<div class="arow"><span>'+l+'</span><b class="mono">'+v+'</b></div>';
+      let titolo, righeTotali='', usi=[];
+      if(entId==='__omesse'){
+        titolo='Omesse timbrature';
+        usi=Object.entries(DB.entries).filter(([,e])=>e&&e.act==='omessa').map(([d,e])=>({d,txt:'',note:e.note||''}));
+        righeTotali=riga('Registrate nell’anno', usi.length);
+      } else {
+        const ent=DB.entitlements.find(x=>x.id===entId); if(!ent)return;
+        titolo=ent.label;
+        const u=ent.unit==='ORE';
+        /* giorni in cui e' stata usata l'attivita collegata */
+        const attivitaId = entId==='ferie_prec' ? 'ferie' : entId;
+        let giorni=Object.entries(DB.entries)
+          .filter(([,e])=>e&&e.act&&ACTBY[e.act]&&ACTBY[e.act].ent===attivitaId)
+          .map(([d,e])=>({d,ph:e.ph||0,note:e.note||''}))
+          .sort((a,b)=>a.d<b.d?-1:1);
+        let used=ent.used0+usage(ent.id), res=ent.total-used, fruitiApp;
+        if(entId==='ferie'||entId==='ferie_prec'){
+          /* le ferie scalano prima l'anno precedente: si ripartiscono i giorni */
+          const alloc=ferieAlloc();
+          if(entId==='ferie_prec'){ giorni=giorni.slice(0,alloc.fromPrev); used=alloc.prevUsed; res=alloc.prevRes; fruitiApp=alloc.fromPrev+' gg'; }
+          else { giorni=giorni.slice(ferieAlloc().fromPrev); used=alloc.curUsed; res=alloc.curRes; fruitiApp=alloc.fromCur+' gg'; }
+        } else {
+          fruitiApp=u?fmtHM(Math.round(usage(ent.id)*60)):usage(ent.id)+' gg';
+        }
+        const f=v=>u?(Number.isInteger(v)?v:v.toFixed(2)):v;
+        righeTotali=riga('Diritto annuo', f(ent.total)+(u?' ore':' gg'))
+          +(ent.used0?riga('Fruito prima dell’app', f(ent.used0)+(u?' ore':' gg')):'')
+          +riga('Fruito nell’app', fruitiApp)
+          +riga('Residuo', f(res)+(u?' ore':' gg'));
+        usi=giorni.reverse().map(g=>({d:g.d, txt:u?fmtHM(g.ph):'1 gg', note:g.note}));
+      }
+      const lista=usi.map(o=>'<div class="arow"><span>'+dataStr(o.d)
+          +(o.note?' <span class="muted">· '+esc(o.note)+'</span>':'')
+        +'</span><b class="mono">'+o.txt+'</b></div>').join('');
+      modalBg.innerHTML='<div class="modal"><h3>'+esc(titolo)+'</h3><div class="mbody">'
+        +righeTotali
+        +(lista?'<div class="subh" style="margin:10px 0 2px">Quando</div><div class="sch-list">'+lista+'</div>'
+               :'<p class="hint" style="margin:8px 0 0">Ancora nessun utilizzo registrato nelle Timbrature.</p>')
+        +'</div><div class="mfoot"><span class="spacer"></span><button class="btn" id="permClose">Chiudi</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('permClose').onclick=closeModal;
     }
 
     /* ---------- Impostazioni ---------- */
