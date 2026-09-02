@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#F6F3ED">
 <title>Registro presenze · Conservatorio</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -286,13 +286,13 @@
 
   .cal-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow)}
   .cal{min-width:660px;position:relative}
-  .cal-head{display:grid;grid-template-columns:54px repeat(7,1fr);position:sticky;top:0;background:var(--surface);z-index:5;border-bottom:1px solid var(--line)}
+  .cal-head{display:grid;grid-template-columns:54px repeat(6,1fr);position:sticky;top:0;background:var(--surface);z-index:5;border-bottom:1px solid var(--line)}
   .cal-head .ch{padding:9px 4px;text-align:center;border-left:1px solid var(--line)}
   .cal-head .ch:first-child{border-left:0}
   .cal-head .dn{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
   .cal-head .dd{font-family:var(--mono);font-size:16px;font-weight:700;margin-top:2px}
   .cal-head .ch.today .dd{color:var(--accent)}
-  .cal-body{display:grid;grid-template-columns:54px repeat(7,1fr)}
+  .cal-body{display:grid;grid-template-columns:54px repeat(6,1fr)}
   .cal-gutter .hr{height:46px;position:relative}
   .cal-gutter .hr span{position:absolute;top:-7px;right:7px;font-family:var(--mono);font-size:10px;color:var(--muted)}
   .cal-col{position:relative;border-left:1px solid var(--line)}
@@ -3065,14 +3065,15 @@ import * as repo from './js/repo.js';
       return {gross,net,autoBreak,breakPunched};
     }
     function dayWorkInfo(date,e){
+      /* lo studio NON entra nel totale: e' un contatore separato (weekStudy) */
       const study=dayStudyMin(date,e);
       const beh=ACTBY[e&&e.act]?.beh;
       const pw=presenceWork(e);
       let base;
-      if(!e||!e.act) base=study;
-      else if(beh==='work'||beh==='hour') base=pw.net+study;
-      else if(beh==='special') base=(pw.net>0?pw.net:expectedFor(date))+study;
-      else base=study;
+      if(!e||!e.act) base=0;
+      else if(beh==='work'||beh==='hour') base=pw.net;
+      else if(beh==='special') base=(pw.net>0?pw.net:expectedFor(date));
+      else base=0;
       const capped=Math.max(0, base-DAILY_CAP);
       return {study, pw, base, capped, cappedBase:Math.min(base,DAILY_CAP), beh, deducted:pw.autoBreak+capped};
     }
@@ -3092,6 +3093,10 @@ import * as repo from './js/repo.js';
     }
     function weekTotal(mon){
       let tot=0; for(let i=0;i<7;i++){const d=iso(addDays(parseISO(mon),i)); if(isSkipped(d))continue; tot+=dayMinutes(d,DB.entries[d]);}
+      return tot;
+    }
+    function weekStudy(mon){
+      let tot=0; for(let i=0;i<7;i++){const d=iso(addDays(parseISO(mon),i)); if(isSkipped(d))continue; tot+=dayStudyMin(d,DB.entries[d]);}
       return tot;
     }
     function weekExcessMin(mon){return Math.max(0,weekTotal(mon)-obligationForWeek(mon));}
@@ -3248,6 +3253,7 @@ import * as repo from './js/repo.js';
           +'<div><div class="group-header">Andamento</div><div class="group">'
             +'<div class="row"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+'</span></div>'
             +'<div class="row"><span class="row__label">Settimane in eccedenza</span><span class="row__value pos">'+over+'</span></div>'
+            +'<div class="row"><span class="row__label">Ore di studio (a parte)</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekStudy(m),0))+'</span></div>'
             +'<div class="row"><span class="row__label">Giorni di ferie residui</span><span class="row__value">'+ferieRes+'</span></div>'
             +'<div class="row"><span class="row__label">Omesse timbrature</span><span class="row__value">'+omessaCount()+'</span></div>'
           +'</div></div>'
@@ -3280,7 +3286,7 @@ import * as repo from './js/repo.js';
 
       const todayISO=iso(new Date());
       let days='';
-      for(let i=0;i<7;i++){
+      for(let i=0;i<6;i++){ /* lun-sab: la domenica non si mostra */
         const dd=addDays(mon,i), key=iso(dd), e=DB.entries[key]||{};
         const wd=dd.getDay(), expected=expectedFor(key);
         const skipped=isSkipped(key);
@@ -3376,10 +3382,11 @@ import * as repo from './js/repo.js';
             +'<button class="navbtn" id="wNext" aria-label="settimana successiva">\u203a</button>'
           +'</div></div>'
         +'<div class="stack">'
-          +'<div class="card"><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:start">'
-            +'<div><div class="foot muted">Svolte</div><div class="num sum-v" style="font-size:var(--t-title2);font-weight:600">'+fmtHM(tot)+'</div></div>'
-            +'<div><div class="foot muted">Dovute</div><div class="num sum-v" style="font-size:var(--t-title2);font-weight:600">'+fmtHM(obl)+'</div></div>'
-            +'<div><div class="foot muted">Credito</div><div class="num sum-v '+(c<0?'neg':(c>0?'pos':''))+'" style="font-size:var(--t-title2);font-weight:600">'+fmtHM(c,true)+'</div></div>'
+          +'<div class="card"><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-items:start">'
+            +'<div><div class="foot muted">Presenza</div><div class="num sum-v" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(tot)+'</div></div>'
+            +'<div><div class="foot muted">Dovute</div><div class="num sum-v" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(obl)+'</div></div>'
+            +'<div><div class="foot muted">Credito</div><div class="num sum-v '+(c<0?'neg':(c>0?'pos':''))+'" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(c,true)+'</div></div>'
+            +'<div><div class="foot muted">Studio</div><div class="num" id="sumStudio" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(weekStudy(weekCursor))+'</div></div>'
           +'</div>'
           +'<div style="display:flex;align-items:center;gap:12px;margin-top:14px">'
             +'<span class="meter" style="flex:1"><span class="meter__fill '+(c>0?'meter__fill--pos':(c<0?'meter__fill--neg':''))+'" style="width:'+Math.min(100,pctFill+overPct)+'%"></span><span class="meter__goal" style="left:'+goalLeft+'%"></span></span>'
@@ -3461,20 +3468,26 @@ import * as repo from './js/repo.js';
     const KP_LABELS={m1in:'ingresso mattina',m1out:'uscita mattina',m2in:'ingresso pomeriggio',m2out:'uscita pomeriggio'};
     function kpFmt(b){return b.length>2?b.slice(0,2)+':'+b.slice(2):b;}
     function kpDisplay(b){return b.length===0?'––:––':(b.length===2?b+':':kpFmt(b));}
+    function kpApply(v){
+      /* scrive il valore sul campo attivo: giorno (Timbrature) o fascia
+         oraria (Impostazioni). Le Impostazioni si salvano col loro Salva. */
+      kpField.textContent=v||'– –:– –';
+      kpField.classList.toggle('is-empty', !v);
+      kpField.dataset.val=v;
+      if(kpField.dataset.scht!=null){
+        updateDay(kpField.dataset.k, +kpField.dataset.pi, +(kpField.dataset.s ?? kpField.dataset.e));
+        return;
+      }
+      const key=kpField.dataset.k,f=kpField.dataset.f;
+      const e=DB.entries[key]||(DB.entries[key]={});
+      e[f]=v;
+      if(!e.act && (e.m1in||e.m1out||e.m2in||e.m2out)) e.act='presenza';
+      saveDay(key); recalcWeekLive(kpField,key,e);
+    }
     function kpRefresh(){
       const disp=document.getElementById('kpDisp');
       if(disp)disp.textContent=kpDisplay(kpBuf);
-      if(kpField){
-        const v=kpFmt(kpBuf);
-        kpField.textContent=v||'– –:– –';
-        kpField.classList.toggle('is-empty', !v);
-        kpField.dataset.val=v;
-        const key=kpField.dataset.k,f=kpField.dataset.f;
-        const e=DB.entries[key]||(DB.entries[key]={});
-        e[f]=v;
-        if(!e.act && (e.m1in||e.m1out||e.m2in||e.m2out)) e.act='presenza';
-        saveDay(key); recalcWeekLive(kpField,key,e);
-      }
+      if(kpField) kpApply(kpFmt(kpBuf));
     }
     function bufToTime(b){
       if(!b)return '';
@@ -3485,22 +3498,24 @@ import * as repo from './js/repo.js';
     }
     function finalizeField(){
       if(!kpField)return;
-      const val=bufToTime(kpBuf);
-      kpField.textContent=val||'– –:– –';
-      kpField.classList.toggle('is-empty', !val);
-      kpField.dataset.val=val;
-      const key=kpField.dataset.k,f=kpField.dataset.f;
-      const e=DB.entries[key]||(DB.entries[key]={});
-      e[f]=val; saveDay(key); recalcWeekLive(kpField,key,e);
+      kpApply(bufToTime(kpBuf));
     }
     function openKeypad(el){
       if(kpField&&kpField!==el)finalizeField();
       if(kpField)kpField.classList.remove('is-active');
       kpField=el; el.classList.add('is-active');
       kpBuf=(el.value||el.dataset.val||'').replace(/\D/g,'').slice(0,4);
-      const dd=parseISO(el.dataset.k);
       const w=document.getElementById('kpWhich');
-      if(w)w.textContent=(KP_LABELS[el.dataset.f]||'')+' · '+DAYNAMES[(dd.getDay()+6)%7]+' '+pad(dd.getDate())+'/'+pad(dd.getMonth()+1);
+      if(w){
+        if(el.dataset.scht!=null){
+          const wd=+(el.dataset.s ?? el.dataset.e);
+          const giorno=SD_[IDX_.indexOf(wd)]||'';
+          w.textContent=(el.dataset.s!=null?'inizio':'fine')+' · '+giorno+' · '+(el.dataset.k==='pres'?'presenza':'studio');
+        } else {
+          const dd=parseISO(el.dataset.k);
+          w.textContent=(KP_LABELS[el.dataset.f]||'')+' · '+DAYNAMES[(dd.getDay()+6)%7]+' '+pad(dd.getDate())+'/'+pad(dd.getMonth()+1);
+        }
+      }
       kpRefresh();
       document.getElementById('keypad').classList.add('is-open');
       document.getElementById('kpScrim').classList.add('is-open');
@@ -3638,7 +3653,7 @@ import * as repo from './js/repo.js';
         if(e<=s)return '';
         return '<div class="cal-band '+cls+'" style="top:'+((s-H0*60)/60*HH)+'px;height:'+((e-s)/60*HH)+'px"></div>';
       };
-      for(let i=0;i<7;i++){
+      for(let i=0;i<6;i++){ /* lun-sab */
         const dd=addDays(mon,i),dISO=iso(dd),isT=dISO===todayISO,wd=dd.getDay();
         head+='<div class="ch '+(isT?'today':'')+'"><div class="dn">'+DAYNAMES[i].slice(0,3)+'</div><div class="dd">'+pad(dd.getDate())+'</div></div>';
         let cell='<div class="cal-col '+(isT?'today':'')+'" data-date="'+dISO+'">';
@@ -3964,15 +3979,17 @@ import * as repo from './js/repo.js';
 
     /* ---------- Impostazioni ---------- */
     const SD_=['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
-    const IDX_=[1,2,3,4,5,6,0];
+    const IDX_=[1,2,3,4,5,6]; /* lun-sab: niente domenica */
     function periodsEditorHTML(kind){
       const list = kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+      const tbtn=(pi,wd,quale,val)=>'<button class="scht-btn tinput '+(val?'':'is-empty')+'" data-scht data-k="'+kind+'" data-pi="'+pi+'" data-'+quale+'="'+wd+'" data-val="'+(val||'')+'">'+(val||'––:––')+'</button>';
       const blocks = list.map((p,pi)=>{
         const rows=IDX_.map((wd,i)=>{const sl=(p.slots&&p.slots[wd])||{};return '<div class="schrow">'
             +'<span class="schd">'+SD_[i].slice(0,3)+'</span>'
-            +'<div class="schog"><span class="schoro" data-oro="'+kind+'-'+pi+'-'+wd+'">'+((p.schedule[wd]||0)>0?fmtHM(p.schedule[wd]):'—')+'</span></div>'
-            +'<div class="schfg"><input class="scht" type="time" data-k="'+kind+'" data-pi="'+pi+'" data-s="'+wd+'" value="'+(sl.start||'')+'"><span class="scharr">–</span><input class="scht" type="time" data-k="'+kind+'" data-pi="'+pi+'" data-e="'+wd+'" value="'+(sl.end||'')+'"></div>'
-            +'<div class="schpz"><input class="schpzin" type="number" min="0" step="5" data-k="'+kind+'" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0"><span class="schu">min</span></div>'
+            +'<span class="schoro" data-oro="'+kind+'-'+pi+'-'+wd+'">'+((p.schedule[wd]||0)>0?fmtHM(p.schedule[wd]):'—')+'</span>'
+            +tbtn(pi,wd,'s',sl.start||'')
+            +tbtn(pi,wd,'e',sl.end||'')
+            +'<input class="schpzin" type="number" min="0" step="5" data-k="'+kind+'" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0">'
           +'</div>';}).join('');
         const sum=Object.values(p.schedule).reduce((a,b)=>a+(+b||0),0);
         return '<div class="period">'
@@ -3982,17 +3999,23 @@ import * as repo from './js/repo.js';
             +'<span class="period-sum" data-sumfor="'+kind+'-'+pi+'">'+fmtHM(sum)+'/sett.</span>'
             +(pi>0?'<button class="linkbtn del" data-k="'+kind+'" data-pi="'+pi+'" data-removeperiod>Rimuovi periodo</button>':'<span class="period-base">periodo iniziale</span>')
           +'</div>'
-          +'<div class="schhead"><span></span><span>ore</span><span>fascia oraria</span><span>pausa (min)</span></div>'
+          +'<div class="schhead"><span></span><span>ore</span><span>inizio</span><span>fine</span><span>pausa</span></div>'
           +'<div class="schlist">'+rows+'</div>'
         +'</div>';
       }).join('');
-      return blocks + '<button class="btn ghost addperiod" data-k="'+kind+'">+ Aggiungi variazione di orario</button>';
+      return blocks
+        +'<div class="setrow" style="margin:14px 0 0;gap:10px">'
+          +'<button class="btn" data-savekind="'+kind+'">Salva orario</button>'
+          +'<button class="btn ghost addperiod" data-k="'+kind+'">+ Variazione di orario</button>'
+        +'</div>';
+    }
+    function schtVal(kind,pi,wd,quale){
+      const b=view.querySelector('[data-scht][data-k="'+kind+'"][data-pi="'+pi+'"][data-'+quale+'="'+wd+'"]');
+      return b?(b.dataset.val||''):'';
     }
     function periodNet(kind,pi,wd){
-      const d=view.querySelector('input.scht[data-k="'+kind+'"][data-pi="'+pi+'"][data-s="'+wd+'"]');
-      const e=view.querySelector('input.scht[data-k="'+kind+'"][data-pi="'+pi+'"][data-e="'+wd+'"]');
       const p=view.querySelector('input.schpzin[data-k="'+kind+'"][data-pi="'+pi+'"][data-bp="'+wd+'"]');
-      const ds=t2m(d&&d.value), de=t2m(e&&e.value);
+      const ds=t2m(schtVal(kind,pi,wd,'s')), de=t2m(schtVal(kind,pi,wd,'e'));
       return (ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(parseInt(p&&p.value,10)||0)):0;
     }
     function periodSum(kind,pi){let s=0;IDX_.forEach(wd=>s+=periodNet(kind,pi,wd));return s;}
@@ -4003,18 +4026,22 @@ import * as repo from './js/repo.js';
       if(disp)disp.textContent=net>0?fmtHM(net):'—';
       updPeriodSum(kind,pi);
     }
+    function commitPeriods(kind){
+      const list = kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+      view.querySelectorAll('input[data-from][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;list[pi].from=i.value?iso(mondayOf(parseISO(i.value))):(pi===0?'':list[pi].from);});
+      view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-s]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.s;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].start=b.dataset.val||'';});
+      view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-e]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.e;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].end=b.dataset.val||'';});
+      view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].pausa=Math.max(0,parseInt(i.value,10)||0);});
+      list.forEach(p=>{IDX_.forEach(wd=>{const sl=(p.slots&&p.slots[wd])||{};const ds=t2m(sl.start),de=t2m(sl.end);p.schedule[wd]=(ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(sl.pausa||0)):0;});p.schedule[0]=0;p.slots[0]={};});
+      list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
+    }
+    function commitEnts(){
+      view.querySelectorAll('#entEdit select[data-f="unit"]').forEach(s=>{const ent=DB.entitlements.find(e=>e.id===s.dataset.ent); if(ent)ent.unit=s.value;});
+      view.querySelectorAll('#entEdit input[data-ent]').forEach(i=>{const ent=DB.entitlements.find(e=>e.id===i.dataset.ent); if(ent)ent[i.dataset.f]=parseFloat(i.value)||0;});
+    }
     function commitSettings(){
-      ['pres','study'].forEach(kind=>{
-        const list = kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-        view.querySelectorAll('input[data-from][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;list[pi].from=i.value?iso(mondayOf(parseISO(i.value))):(pi===0?'':list[pi].from);});
-        view.querySelectorAll('input.scht[data-k="'+kind+'"][data-s]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.s;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].start=i.value;});
-        view.querySelectorAll('input.scht[data-k="'+kind+'"][data-e]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.e;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].end=i.value;});
-        view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].pausa=Math.max(0,parseInt(i.value,10)||0);});
-        list.forEach(p=>{IDX_.forEach(wd=>{const sl=(p.slots&&p.slots[wd])||{};const ds=t2m(sl.start),de=t2m(sl.end);p.schedule[wd]=(ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(sl.pausa||0)):0;});});
-        list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
-      });
-      view.querySelectorAll('.ent-table select[data-f="unit"]').forEach(s=>{const ent=DB.entitlements.find(e=>e.id===s.dataset.ent); if(ent)ent.unit=s.value;});
-      view.querySelectorAll('.ent-table input').forEach(i=>{const ent=DB.entitlements.find(e=>e.id===i.dataset.ent); if(ent)ent[i.dataset.f]=parseFloat(i.value)||0;});
+      ['pres','study'].forEach(commitPeriods);
+      commitEnts();
       DB.startDate=document.getElementById('setStart').value;
       DB.yearLabel=aaLabel(DB.startDate);
       const sign=+document.getElementById('setBalSign').value;
@@ -4023,12 +4050,12 @@ import * as repo from './js/repo.js';
       DB.initialBalanceMin=sign*(h*60+Math.min(59,m));
     }
     function renderImpostazioni(){
-      const rows=DB.entitlements.map(e=>'<tr>'
-         +'<td>'+e.label+'</td>'
-         +'<td><select class="unit-sel" data-ent="'+e.id+'" data-f="unit"><option value="GG" '+(e.unit==='GG'?'selected':'')+'>giorni</option><option value="ORE" '+(e.unit==='ORE'?'selected':'')+'>ore</option></select></td>'
-         +'<td><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="total" value="'+e.total+'"></td>'
-         +'<td><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="used0" value="'+e.used0+'"></td>'
-       +'</tr>').join('');
+      const rows=DB.entitlements.map(e=>'<div class="entrow">'
+         +'<span class="entname">'+e.label+'</span>'
+         +'<select class="unit-sel" data-ent="'+e.id+'" data-f="unit"><option value="GG" '+(e.unit==='GG'?'selected':'')+'>giorni</option><option value="ORE" '+(e.unit==='ORE'?'selected':'')+'>ore</option></select>'
+         +'<label class="entfield"><span>diritto</span><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="total" value="'+e.total+'"></label>'
+         +'<label class="entfield"><span>già fruito</span><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="used0" value="'+e.used0+'"></label>'
+       +'</div>').join('');
       const bm=DB.initialBalanceMin||0, bSign=bm<0?-1:1, bH=Math.floor(Math.abs(bm)/60), bM=Math.abs(bm)%60;
       view.innerHTML=
         '<h2 class="sec-h">Anno e saldo di partenza</h2>'
@@ -4052,13 +4079,13 @@ import * as repo from './js/repo.js';
         +'<div class="card" style="padding:14px 18px">'+periodsEditorHTML('pres')+'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Orario di studio</h2>'
-        +'<p class="sec-d">Studio (lavoro svolto a casa): conta come lavoro nel saldo. Compare già precompilato, e modificabile, nei giorni delle Timbrature. Anche questo può variare nel corso dell’anno.</p>'
+        +'<p class="sec-d">Studio (lavoro svolto a casa): ha un contatore tutto suo, separato dal saldo e dal totale settimanale. Anche questo può variare nel corso dell’anno.</p>'
         +'<div class="card" style="padding:14px 18px">'+periodsEditorHTML('study')+'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Limiti permessi</h2>'
         +'<p class="sec-d"><b>Diritto</b> = spettanza annua · <b>Già fruito</b> = quanto consumato prima dell’app.</p>'
-        +'<div class="card" style="padding:8px 16px 14px">'
-          +'<table class="ent-table"><thead><tr><th>Voce</th><th>Unità</th><th>Diritto</th><th>Già fruito</th></tr></thead><tbody>'+rows+'</tbody></table>'
+        +'<div class="card" style="padding:6px 16px 14px" id="entEdit">'+rows
+          +'<div class="setrow" style="margin:12px 0 0"><button class="btn" id="savePerm">Salva permessi</button></div>'
         +'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Backup dei dati</h2>'
@@ -4082,9 +4109,20 @@ import * as repo from './js/repo.js';
         +'</div>'
         +'<p class="hint"><b>Azzera timbrature</b>: cancella solo le giornate registrate (mantiene orari, permessi e impostazioni). <b>Azzera tutti i dati</b>: ripristina tutto ai valori iniziali.</p>';
 
-      view.querySelectorAll('input.scht[data-s],input.scht[data-e],input.schpzin[data-bp]').forEach(i=>i.addEventListener('input',()=>{
-        updateDay(i.dataset.k,i.dataset.pi,+(i.dataset.s||i.dataset.e||i.dataset.bp));
+      view.querySelectorAll('[data-scht]').forEach(b=>b.onclick=()=>openKeypad(b));
+      view.querySelectorAll('input.schpzin[data-bp]').forEach(i=>i.addEventListener('input',()=>{
+        updateDay(i.dataset.k,i.dataset.pi,+i.dataset.bp);
       }));
+      view.querySelectorAll('[data-savekind]').forEach(b=>b.onclick=()=>{
+        const kind=b.dataset.savekind;
+        commitPeriods(kind); savePeriods(kind);
+        refreshChip(); renderImpostazioni();
+        toast('Orario '+(kind==='pres'?'in presenza':'di studio')+' salvato');
+      });
+      const sp=document.getElementById('savePerm'); if(sp)sp.onclick=()=>{
+        commitEnts(); repo.saveDiritti(DB.entitlements);
+        refreshChip(); renderImpostazioni(); toast('Permessi salvati');
+      };
       view.querySelectorAll('.addperiod').forEach(b=>b.onclick=()=>{
         commitSettings();
         const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;

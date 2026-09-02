@@ -180,18 +180,47 @@ select:focus,input:focus,textarea:focus,
 .lg-dot.pres{background:var(--teal-wash);border:1px solid var(--ev-bordo)}
 .lg-dot.study{background:var(--yellow-wash);border:1px solid var(--ev-bordo-y)}
 
-/* ---------- 3i. mobile-first: compattezze sotto i 760px -------------------- */
+/* ---------- 3i. editor orari a tastierino: 5 colonne, entra in 375px ------ */
+.schhead,.schrow,.period .schhead,.period .schrow{
+  grid-template-columns:32px 44px 1fr 1fr 48px;gap:7px;align-items:center}
+.schhead span:nth-child(3){padding-left:0}
+.scht-btn{min-height:40px;border:0;border-radius:9px;background:var(--velo);
+  font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:14px;font-weight:500;
+  color:var(--ink);text-align:center;padding:0 2px;width:100%}
+.scht-btn.is-empty{color:var(--segnaposto)}
+.scht-btn.is-active{outline:2px solid var(--yellow);color:var(--teal)}
+.schoro{min-width:0;width:100%;padding:6px 2px;font-size:12px;background:transparent;border:0;color:var(--teal);font-weight:700}
+.schpzin{width:100%;min-height:40px;padding:6px 2px;text-align:center}
+.schd{font-size:12.5px}
+
+/* ---------- 3j. righe dei limiti permessi -------------------------------- */
+.entrow{display:grid;grid-template-columns:1fr 92px 84px 84px;gap:8px;align-items:end;
+  padding:10px 0;border-top:1px solid var(--ctm-linea-soft)}
+.entrow:first-child{border-top:0}
+.entrow .entname{font-size:13.5px;font-weight:600;align-self:center}
+.entrow select{min-height:40px;font-size:13px;padding:6px 6px}
+.entfield{display:flex;flex-direction:column;gap:3px}
+.entfield span{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+.entfield input{width:100%;min-height:40px;padding:6px 6px;text-align:center}
+
+/* ---------- 3k. mobile-first: compattezze sotto i 760px ------------------- */
 @media (max-width:760px){
-  .schhead,.schrow,.period .schhead,.period .schrow{grid-template-columns:34px 58px 1fr 54px;gap:6px}
-  .scht{min-height:38px;padding:8px 3px;font-size:13px}
-  .scht::-webkit-calendar-picker-indicator{display:none}
-  .schoro{min-width:44px;padding:6px 3px;font-size:12px}
-  .schpzin{width:44px;min-height:38px;padding:6px 2px}
   .topbar h1::after{width:150px}
-  /* brief §5: le tabelle larghe scorrono orizzontalmente DENTRO la card */
-  .period{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .period .schhead,.period .schrow{min-width:400px}
+  .entrow{grid-template-columns:92px 1fr 1fr}
+  .entrow .entname{grid-column:1/-1;padding-top:2px}
+  /* iOS zooma da solo sui campi sotto i 16px: si tolgono i pretesti */
+  select,input[type=time],input[type=number],input[type=text],input[type=date],
+  textarea,.mfield input,.mfield select,.mfield textarea,.act-sel,.ppl-teacher{font-size:16px}
 }
+
+/* ---------- 3l. niente trabocco orizzontale (fascia bianca) --------------- */
+html,body{overflow-x:hidden}
+#appRoot{overflow-x:clip}
+.ppl-item{flex-wrap:wrap;row-gap:8px}
+.ppl-item .ppl-main{min-width:0;flex:1 1 120px}
+.ppl-item .nm{overflow-wrap:anywhere}
+.hours-row .who{min-width:0}
+.hours-row .who b{overflow-wrap:anywhere}
 
 /* ---------- 3h. cancello di accesso -------------------------------------- */
 #authGate{position:fixed;inset:0;z-index:999;display:grid;place-items:center;padding:24px;
