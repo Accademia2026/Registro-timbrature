@@ -213,6 +213,35 @@ select:focus,input:focus,textarea:focus,
   textarea,.mfield input,.mfield select,.mfield textarea,.act-sel,.ppl-teacher{font-size:16px}
 }
 
+/* ---------- registro a righe (bozza A) ------------------------------------ */
+.drow{display:flex;align-items:center;gap:10px;padding:9px 14px;min-height:48px;
+  border-top:1px solid var(--ctm-linea-soft);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.drow:first-child{border-top:0}
+.drow--off{cursor:default}
+.drow--sel{background:var(--teal-wash)}
+.drow .kl{width:3px;height:24px;border-radius:2px;flex:none}
+.drow .dcol{width:52px;flex:none;line-height:1.15}
+.drow .dcol b{display:block;font-size:13px;text-transform:capitalize}
+.drow .dcol span{font-size:10.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.drow--oggi .dcol b{color:var(--teal)}
+.oggi-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--yellow);margin-left:4px;vertical-align:2px}
+.dtimes{flex:1;min-width:0;font-size:12.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.atot{font-family:var(--serif);font-weight:600;font-size:15px;color:var(--ink);
+  text-align:right;min-width:50px;font-variant-numeric:tabular-nums;line-height:1.1}
+.atot small{display:block;font-family:"Inter",system-ui,sans-serif;font-size:9px;color:var(--ink-soft);font-weight:400}
+.chip-mini{display:inline-block;font-size:10.5px;font-weight:600;border-radius:999px;padding:2px 8px;
+  background:var(--teal-wash);color:var(--teal);white-space:nowrap;vertical-align:1px}
+.chip-mini.chip-fer{background:var(--yellow-wash);color:var(--yellow-d)}
+.badge-st{font-size:10.5px;font-weight:600;color:var(--teal);background:var(--teal-wash);border-radius:8px;padding:4px 8px;white-space:nowrap}
+.dsm{min-height:32px;padding:5px 12px;font-size:12px}
+.dopen{padding:12px 14px 14px;background:var(--velo);border-top:1px solid var(--ctm-linea-soft);
+  display:flex;flex-direction:column;gap:10px}
+.dopen-r1{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dopen .punch{display:flex;align-items:center;gap:8px}
+.dopen .input--time{flex:1 1 0;min-width:0;min-height:40px;background:var(--ctm-carta)}
+.dopen .note{background:var(--ctm-carta)}
+
 /* ---------- archivio anni chiusi ------------------------------------------ */
 .archrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;
   border-top:1px solid var(--ctm-linea-soft);font-size:13.5px}

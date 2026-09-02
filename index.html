@@ -3139,6 +3139,7 @@ import * as repo from './js/repo.js';
     let current='riepilogo';
     let weekCursor=null;
     let authEditWeek=null;
+    let openDay=null;   /* riga-giorno aperta nel registro ('__chiuso' = nessuna) */
     let diaryCursor=null;
     let clockTimer=null;
 
@@ -3273,7 +3274,56 @@ import * as repo from './js/repo.js';
       },1000);
     }
 
-    /* ---------- Registro ---------- */
+    /* ---------- Registro: riga compatta + editor a scomparsa ---------- */
+    function rigaTimes(key,e){
+      const beh=ACTBY[e.act]?.beh;
+      let pezzi=[];
+      if(e.act && e.act!=='presenza'){
+        pezzi.push('<span class="chip-mini'+(beh==='day'?' chip-fer':'')+'">'+esc(ACTBY[e.act].label)+'</span>');
+      }
+      if(beh==='work'||beh==='hour'||beh==='special'||!e.act){
+        const s1=(e.m1in||e.m1out)?((e.m1in||'··')+'→'+(e.m1out||'··')):null;
+        const s2=(e.m2in||e.m2out)?((e.m2in||'··')+'→'+(e.m2out||'··')):null;
+        if(s1)pezzi.push(s1);
+        if(s2)pezzi.push(s2);
+        if(!s1&&!s2&&!e.act)pezzi.push('<span class="muted">––:––</span>');
+        if(beh==='hour'&&e.ph)pezzi.push('perm '+fmtHM(e.ph));
+      }
+      const st=dayStudyMin(key,e);
+      if(st>0)pezzi.push('st '+fmtHM(st));
+      if(e.note)pezzi.push('✎');
+      return pezzi.join(' · ');
+    }
+    function rigaTot(key,e){
+      if(!e.act)return '<span class="muted">—</span>';
+      const expected=expectedFor(key);
+      const beh=ACTBY[e.act]?.beh;
+      const showSu=(beh==='work'||beh==='hour'||beh==='special')&&expected>0;
+      return fmtHM(dayMinutes(key,e))+(showSu?'<small>su '+fmtHM(expected)+'</small>':'');
+    }
+    function editorGiorno(key,e){
+      const beh=ACTBY[e.act]?.beh, expected=expectedFor(key);
+      const showTimes=beh==='work'||beh==='hour'||beh==='special'||(!e.act&&expected>0);
+      const showPh=beh==='hour';
+      const sp1=(t2m(e.m1in)!=null&&t2m(e.m1out)!=null)?Math.max(0,t2m(e.m1out)-t2m(e.m1in)):null;
+      const sp2=(t2m(e.m2in)!=null&&t2m(e.m2out)!=null)?Math.max(0,t2m(e.m2out)-t2m(e.m2in)):null;
+      const opts='<option value="">— seleziona —</option>'+ACT.map(a=>'<option value="'+a.id+'" '+(e.act===a.id?'selected':'')+'>'+a.label+'</option>').join('');
+      const tbtn=(f)=>'<button class="input input--time tinput '+(e[f]?'':'is-empty')+'" data-k="'+key+'" data-f="'+f+'" data-val="'+(e[f]||'')+'">'+(e[f]||'––:––')+'</button>';
+      let x='<div class="dopen-r1"><select class="act-sel" data-k="'+key+'" data-f="act">'+opts+'</select>'
+        +(studyDefaultFor(key)>0?'<span class="badge-st">Studio '+fmtHM(studyDefaultFor(key))+'</span>':'')
+        +'<button class="idanger dsm" data-removeday="'+key+'" style="margin-left:auto">Rimuovi</button></div>';
+      if(showTimes){
+        x+='<div class="punch">'+tbtn('m1in')+'<span class="punch__arrow">→</span>'+tbtn('m1out')+(sp1!=null?'<span class="punch__dur">'+fmtHM(sp1)+'</span>':'')+'</div>';
+        x+='<div class="punch">'+tbtn('m2in')+'<span class="punch__arrow">→</span>'+tbtn('m2out')+(sp2!=null?'<span class="punch__dur">'+fmtHM(sp2)+'</span>':'')+'</div>';
+      }
+      if(showPh){
+        x+='<div class="phfield"><span class="muted">Ore permesso</span><input class="note" style="width:90px" type="number" min="0" step="0.25" data-k="'+key+'" data-f="phh" value="'+(e.ph!=null?(e.ph/60):'')+'" placeholder="es. 2"></div>';
+      }
+      x+='<input class="note" type="text" data-k="'+key+'" data-f="note" value="'+((e.note||'').replace(/"/g,'&quot;'))+'" placeholder="Note (facoltative)">';
+      const wI=dayWorkInfo(key,e);
+      if(wI.deducted>0){const parts=[];if(wI.pw.autoBreak>0)parts.push('pausa '+fmtHM(wI.pw.autoBreak));if(wI.capped>0)parts.push('tetto 9h');x+='<div class="day__note">−'+fmtHM(wI.deducted)+' · '+parts.join(' + ')+'</div>';}
+      return x;
+    }
     function renderRegistro(){
       if(!weekCursor) weekCursor=iso(mondayOf(new Date()));
       const mon=parseISO(weekCursor), sun=addDays(mon,6);
@@ -3285,62 +3335,34 @@ import * as repo from './js/repo.js';
           : mon.getDate()+' '+MONTHS[mon.getMonth()].slice(0,3)+' – '+sun.getDate()+' '+MONTHS[sun.getMonth()].slice(0,3);
 
       const todayISO=iso(new Date());
+      /* prima apertura sulla settimana corrente: si apre il giorno di oggi */
+      if(openDay===null && iso(mondayOf(new Date()))===weekCursor) openDay=todayISO;
       let days='';
       for(let i=0;i<6;i++){ /* lun-sab: la domenica non si mostra */
         const dd=addDays(mon,i), key=iso(dd), e=DB.entries[key]||{};
-        const wd=dd.getDay(), expected=expectedFor(key);
+        const expected=expectedFor(key);
         const skipped=isSkipped(key);
         const naturalRest = expected===0;
         const isToday = key===todayISO;
-        const beh=ACTBY[e.act]?.beh;
-        const showTimes = beh==='work'||beh==='hour'||beh==='special'||(!e.act&&expected>0);
-        const showPh = beh==='hour';
-        const dm=dayMinutes(key,e);
-        const sp1=(t2m(e.m1in)!=null&&t2m(e.m1out)!=null)?Math.max(0,t2m(e.m1out)-t2m(e.m1in)):null;
-        const sp2=(t2m(e.m2in)!=null&&t2m(e.m2out)!=null)?Math.max(0,t2m(e.m2out)-t2m(e.m2in)):null;
-        const opts='<option value="">— seleziona —</option>'+ACT.map(a=>'<option value="'+a.id+'" '+(e.act===a.id?'selected':'')+'>'+a.label+'</option>').join('');
         const dstr=pad(dd.getDate())+'/'+pad(dd.getMonth()+1);
-        const accent=(e.act&&!skipped)?actAccent(e.act):'var(--tint)';
+        const nomeG='<div class="dcol"><b>'+DAYNAMES[i].slice(0,3)+(isToday?'<i class="oggi-dot"></i>':'')+'</b><span>'+dstr+'</span></div>';
         if(skipped){
-          days+='<article class="day day--riposo">'
-            +'<div class="day__hl"><span class="day__name muted">'+DAYNAMES[i]+'</span><span class="day__date">'+dstr+'</span></div>'
-            +'<span class="linkrow"><span class="badge">Rimosso</span><button class="ilink" data-restore="'+key+'">Ripristina</button></span>'
-          +'</article>';
+          days+='<div class="drow drow--off"><span class="kl" style="background:var(--line)"></span>'+nomeG
+            +'<span class="dtimes muted">Rimosso</span>'
+            +'<button class="ilink dsm" data-restore="'+key+'">Ripristina</button></div>';
         } else if(naturalRest && !hasEntry(e)){
-          days+='<article class="day day--riposo">'
-            +'<div class="day__hl"><span class="day__name muted">'+DAYNAMES[i]+'</span><span class="day__date">'+dstr+'</span></div>'
-            +'<span class="linkrow"><span class="badge">Riposo</span><button class="ilink" data-unlock="'+key+'">+ Straordinario</button></span>'
-          +'</article>';
+          days+='<div class="drow drow--off"><span class="kl" style="background:var(--line)"></span>'+nomeG
+            +'<span class="dtimes muted" style="font-style:italic">Riposo</span>'
+            +'<button class="ilink dsm" data-unlock="'+key+'">+ straord.</button></div>';
         } else {
-          const actSel='<select class="act-sel" data-k="'+key+'" data-f="act">'+opts+'</select>';
-          const tbtn=(f)=>'<button class="input input--time tinput '+(e[f]?'':'is-empty')+'" data-k="'+key+'" data-f="'+f+'" data-val="'+(e[f]||'')+'">'+(e[f]||'\u2013\u2013:\u2013\u2013')+'</button>';
-          let inner='';
-          if(showTimes){
-            inner+='<div class="punch">'+tbtn('m1in')+'<span class="punch__arrow">\u2192</span>'+tbtn('m1out')+(sp1!=null?'<span class="punch__dur">'+fmtHM(sp1)+'</span>':'')+'</div>';
-            inner+='<div class="punch">'+tbtn('m2in')+'<span class="punch__arrow">\u2192</span>'+tbtn('m2out')+(sp2!=null?'<span class="punch__dur">'+fmtHM(sp2)+'</span>':'')+'</div>';
-          }
-          if(showPh){
-            inner+='<div class="phfield"><span class="muted">Ore permesso</span><input class="note" style="width:90px" type="number" min="0" step="0.25" data-k="'+key+'" data-f="phh" value="'+(e.ph!=null?(e.ph/60):'')+'" placeholder="es. 2"></div>';
-          }
-          inner+='<input class="note" type="text" data-k="'+key+'" data-f="note" value="'+((e.note||'').replace(/"/g,'&quot;'))+'" placeholder="Note (facoltative)">';
-          if(!showTimes){
-            inner='<div class="day__leaverow"><span class="muted sub">'+(ACTBY[e.act]?ACTBY[e.act].label:'Assenza')+'</span><span class="day__total">'+fmtHM(dm)+'</span></div>'+inner;
-          } else {
-            const wI=dayWorkInfo(key,e);
-            if(wI.deducted>0){const parts=[];if(wI.pw.autoBreak>0)parts.push('pausa '+fmtHM(wI.pw.autoBreak));if(wI.capped>0)parts.push('tetto 9h');inner+='<div class="day__note">\u2212'+fmtHM(wI.deducted)+' \u00b7 '+parts.join(' + ')+'</div>';}
-            inner+='<div class="day__foot"><div style="display:flex;align-items:center;gap:8px;min-width:0">'
-              +(studyDefaultFor(key)>0?'<span class="badge badge--pos">Studio '+fmtHM(studyDefaultFor(key))+'</span>':'')
-              +'</div>'
-              +((e.act||dayStudyMin(key,e))?'<span class="day__total">'+fmtHM(dm)+(expected?'<small>su '+fmtHM(expected)+'</small>':'')+'</span>':'')
-            +'</div>';
-          }
-          inner+='<button class="idanger" data-removeday="'+key+'" style="align-self:flex-start;margin-top:2px">Rimuovi giornata</button>';
-          days+='<article class="day '+(isToday?'day--oggi':'')+'">'
-            +'<div class="day__head"><div class="day__hl"><span class="day__kindline" style="background:'+accent+'"></span>'
-              +'<span class="day__name">'+DAYNAMES[i]+'</span><span class="day__date">'+dstr+'</span>'
-              +(isToday?'<span class="badge badge--today">Oggi</span>':'')+'</div>'+actSel+'</div>'
-            +'<div class="day__body">'+inner+'</div>'
-          +'</article>';
+          const aperto=openDay===key;
+          const accent=e.act?actAccent(e.act):'var(--line-strong)';
+          days+='<div class="drow'+(isToday?' drow--oggi':'')+(aperto?' drow--sel':'')+'" data-open="'+key+'">'
+            +'<span class="kl" style="background:'+accent+'"></span>'+nomeG
+            +'<span class="dtimes">'+rigaTimes(key,e)+'</span>'
+            +'<span class="atot">'+rigaTot(key,e)+'</span>'
+          +'</div>';
+          if(aperto) days+='<div class="dopen">'+editorGiorno(key,e)+'</div>';
         }
       }
 
@@ -3395,7 +3417,7 @@ import * as repo from './js/repo.js';
           +'</div>'
           +authBar
           +weekActions
-          +'<div class="daylist">'+days+'</div>'
+          +'<div class="card" id="dlist" style="padding:0;overflow:hidden">'+days+'</div>'
         +'</div>'
         +'</div>';
 
@@ -3403,6 +3425,12 @@ import * as repo from './js/repo.js';
       document.getElementById('wPrev').onclick=()=>{weekCursor=iso(addDays(mon,-7));renderRegistro();};
       document.getElementById('wNext').onclick=()=>{weekCursor=iso(addDays(mon,7));renderRegistro();};
       document.getElementById('wToday').onclick=()=>{weekCursor=iso(mondayOf(new Date()));renderRegistro();};
+      view.querySelectorAll('.drow[data-open]').forEach(r=>r.onclick=ev=>{
+        if(ev.target.closest('button,select,input'))return;
+        const k=r.dataset.open;
+        openDay=(openDay===k?'__chiuso':k);
+        renderRegistro();
+      });
       view.querySelectorAll('[data-k]').forEach(el=>{
         if(el.classList.contains('tinput')){
           el.addEventListener('click',()=>openKeypad(el));
@@ -3457,10 +3485,15 @@ import * as repo from './js/repo.js';
       const obl=obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
       const sums=view.querySelectorAll('.sum-v');
       if(sums[0]){sums[0].textContent=fmtHM(tot); sums[1].textContent=fmtHM(obl); sums[2].textContent=fmtHM(c,true); sums[2].className='num sum-v '+(c<0?'neg':(c>0?'pos':''));}
+      const st=document.getElementById('sumStudio'); if(st)st.textContent=fmtHM(weekStudy(weekCursor));
       const esEl=view.querySelector('.sum-esito');
       if(esEl){esEl.className='badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''));esEl.textContent=c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari');}
-      const dayEl=el&&el.closest('.day'); const tEl=dayEl&&dayEl.querySelector('.day__total');
-      if(tEl){tEl.firstChild.textContent=fmtHM(dayMinutes(key,e));}
+      /* aggiorna la riga compatta del giorno che si sta modificando */
+      const row=view.querySelector('.drow[data-open="'+key+'"]');
+      if(row){
+        const tEl=row.querySelector('.atot'); if(tEl)tEl.innerHTML=rigaTot(key,e||{});
+        const sEl=row.querySelector('.dtimes'); if(sEl)sEl.innerHTML=rigaTimes(key,e||{});
+      }
       refreshChip();
     }
     /* ---- tastierino orario ---- */
