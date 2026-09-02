@@ -213,6 +213,16 @@ select:focus,input:focus,textarea:focus,
   textarea,.mfield input,.mfield select,.mfield textarea,.act-sel,.ppl-teacher{font-size:16px}
 }
 
+/* ---------- archivio anni chiusi ------------------------------------------ */
+.archrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;
+  border-top:1px solid var(--ctm-linea-soft);font-size:13.5px}
+.archrow:first-child{border-top:0}
+.archrow .muted{color:var(--ink-soft);font-size:12.5px}
+.arow{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding:8px 0;border-bottom:1px solid var(--ctm-linea-soft);font-size:14px}
+.arow:last-child{border-bottom:0}
+.arow b{font-variant-numeric:tabular-nums}
+
 /* ---------- 3l. niente trabocco orizzontale (fascia bianca) --------------- */
 html,body{overflow-x:hidden}
 #appRoot{overflow-x:clip}

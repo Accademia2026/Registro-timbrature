@@ -4026,6 +4026,84 @@ import * as repo from './js/repo.js';
       if(disp)disp.textContent=net>0?fmtHM(net):'—';
       updPeriodSum(kind,pi);
     }
+    /* ---------- chiusura anno e archivio ---------- */
+    async function chiudiAnno(){
+      const nuovo=document.getElementById('chiusuraStart').value;
+      if(!nuovo){toast('Scegli prima la data di inizio del nuovo anno');return;}
+      const bal=runningBalance(), fa=ferieAlloc(), ferieRes=fa.prevRes+fa.curRes;
+      const label=DB.yearLabel||aaLabel(DB.startDate)||'anno';
+      if(!confirm('Chiudere l’anno '+label+'?\n\n• L’anno finisce in archivio (consultabile)\n• Saldo iniziale del nuovo anno: '+fmtHM(bal,true)+'\n• Ferie anno precedente: '+ferieRes+' gg\n• Le timbrature ripartono da zero'))return;
+      const wks=weeksWithData();
+      const riepilogo={
+        saldoFinaleMin:bal,
+        ferieUsate:fa.taken, ferieResidue:ferieRes,
+        settimane:wks.length,
+        oreLavorateMin:wks.reduce((a,m)=>a+weekTotal(m),0),
+        oreStudioMin:wks.reduce((a,m)=>a+weekStudy(m),0),
+        omesse:omessaCount(),
+        permessi:DB.entitlements.map(e=>({label:e.label,unit:e.unit,total:e.total,usati:(e.used0||0)+usage(e.id)})),
+      };
+      toast('Archiviazione in corso…');
+      try{
+        await repo.insertArchivio({anno_label:label, saldo_finale_min:bal,
+          dati:{riepilogo, DB:JSON.parse(JSON.stringify(DB))}});
+      }catch(_){return;}
+      /* nuovo anno */
+      DB.entries={}; DB.authorized={}; DB.skipDays={};
+      DB.initialBalanceMin=bal;
+      DB.startDate=nuovo; DB.yearLabel=aaLabel(nuovo);
+      const prev=DB.entitlements.find(e=>e.id==='ferie_prec');
+      if(prev){prev.total=ferieRes; prev.used0=0;}
+      DB.entitlements.forEach(e=>{if(e.id!=='ferie_prec')e.used0=0;});
+      try{await repo.clearTimbrature();}catch(_){}
+      repo.saveImpostazioni(DB); repo.saveDiritti(DB.entitlements);
+      weekCursor=null; refreshChip(); renderImpostazioni();
+      toast('Anno '+label+' archiviato. Buon '+(DB.yearLabel||'nuovo anno')+'!');
+    }
+    async function caricaArchivio(){
+      const el=document.getElementById('archList'); if(!el)return;
+      try{
+        const rows=await repo.listArchivi();
+        if(!document.getElementById('archList'))return;
+        if(!rows.length){el.textContent='Ancora nessun anno archiviato.';return;}
+        el.className='';
+        el.innerHTML=rows.map(r=>'<div class="archrow"><b>'+esc(r.anno_label)+'</b>'
+          +'<span class="muted">chiuso il '+new Date(r.chiuso_il).toLocaleDateString('it-IT')+' · saldo '+fmtHM(r.saldo_finale_min,true)+'</span>'
+          +'<span style="flex:1"></span>'
+          +'<button class="linkbtn" data-archsum="'+r.id+'">Riepilogo</button>'
+          +'<button class="linkbtn" data-archdl="'+r.id+'">Scarica</button></div>').join('');
+        el.querySelectorAll('[data-archsum]').forEach(b=>b.onclick=async()=>{
+          try{mostraArchivio(await repo.getArchivio(b.dataset.archsum));}catch(_){}
+        });
+        el.querySelectorAll('[data-archdl]').forEach(b=>b.onclick=async()=>{
+          try{
+            const a=await repo.getArchivio(b.dataset.archdl);
+            const blob=new Blob([JSON.stringify(a.dati,null,2)],{type:'application/json'});
+            const url=URL.createObjectURL(blob), x=document.createElement('a');
+            x.href=url; x.download='registro-archivio-'+String(a.anno_label).replace(/[^0-9a-z]+/gi,'-')+'.json';
+            document.body.appendChild(x); x.click(); x.remove();
+            setTimeout(()=>URL.revokeObjectURL(url),1500);
+          }catch(_){}
+        });
+      }catch(_){ el.textContent='Archivio non disponibile: manca la tabella nel database (script 03-archivi.sql).'; }
+    }
+    function mostraArchivio(a){
+      const r=(a.dati&&a.dati.riepilogo)||{};
+      const riga=(l,v)=>'<div class="arow"><span>'+l+'</span><b class="mono">'+v+'</b></div>';
+      const permessi=(r.permessi||[]).filter(p=>p.usati>0)
+        .map(p=>riga(esc(p.label), p.usati+' / '+p.total+' '+(p.unit==='GG'?'gg':'ore'))).join('');
+      modalBg.innerHTML='<div class="modal"><h3>Anno '+esc(a.anno_label)+'</h3><div class="mbody">'
+        +riga('Saldo finale',fmtHM(a.saldo_finale_min,true))
+        +riga('Settimane registrate', r.settimane??'—')
+        +riga('Ore in presenza', r.oreLavorateMin!=null?fmtHM(r.oreLavorateMin):'—')
+        +riga('Ore di studio', r.oreStudioMin!=null?fmtHM(r.oreStudioMin):'—')
+        +riga('Ferie usate / residue', (r.ferieUsate??'—')+' / '+(r.ferieResidue??'—')+' gg')
+        +(permessi?'<div class="subh" style="margin:12px 0 2px">Permessi usati</div>'+permessi:'')
+        +'</div><div class="mfoot"><span class="spacer"></span><button class="btn" id="archClose">Chiudi</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('archClose').onclick=closeModal;
+    }
+
     function commitPeriods(kind){
       const list = kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
       view.querySelectorAll('input[data-from][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;list[pi].from=i.value?iso(mondayOf(parseISO(i.value))):(pi===0?'':list[pi].from);});
@@ -4057,6 +4135,9 @@ import * as repo from './js/repo.js';
          +'<label class="entfield"><span>già fruito</span><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="used0" value="'+e.used0+'"></label>'
        +'</div>').join('');
       const bm=DB.initialBalanceMin||0, bSign=bm<0?-1:1, bH=Math.floor(Math.abs(bm)/60), bM=Math.abs(bm)%60;
+      const chiusBal=runningBalance(), chiusFA=ferieAlloc(), chiusFerie=chiusFA.prevRes+chiusFA.curRes;
+      let chiusSugg='';
+      if(DB.startDate){const sd=parseISO(DB.startDate); chiusSugg=iso(new Date(sd.getFullYear()+1,sd.getMonth(),sd.getDate()));}
       view.innerHTML=
         '<h2 class="sec-h">Anno e saldo di partenza</h2>'
         +'<p class="sec-d">Valori già maturati prima dell’uso dell’app (per allinearsi alla situazione attuale).</p>'
@@ -4086,6 +4167,19 @@ import * as repo from './js/repo.js';
         +'<p class="sec-d"><b>Diritto</b> = spettanza annua · <b>Già fruito</b> = quanto consumato prima dell’app.</p>'
         +'<div class="card" style="padding:6px 16px 14px" id="entEdit">'+rows
           +'<div class="setrow" style="margin:12px 0 0"><button class="btn" id="savePerm">Salva permessi</button></div>'
+        +'</div>'
+        +'<div class="divider"></div>'
+        +'<h2 class="sec-h">Chiusura anno</h2>'
+        +'<p class="sec-d">A fine anno accademico: l’anno viene messo in archivio (consultabile qui sotto), il saldo finale diventa il saldo iniziale del nuovo anno e le ferie non godute passano in «Ferie anno precedente». Le timbrature ripartono da zero; orari, permessi e anagrafica restano.</p>'
+        +'<div class="card" style="padding:16px 18px">'
+          +'<div class="setrow" style="margin:0;align-items:end">'
+            +'<div class="field"><label>Saldo attuale</label><span class="schoro" style="min-width:70px">'+fmtHM(chiusBal,true)+'</span></div>'
+            +'<div class="field"><label>Ferie residue</label><span class="schoro" style="min-width:70px">'+chiusFerie+' gg</span></div>'
+            +'<div class="field"><label>Inizio nuovo anno</label><input type="date" id="chiusuraStart" value="'+chiusSugg+'"></div>'
+            +'<button class="btn warn" id="btnChiudiAnno">Chiudi e archivia</button>'
+          +'</div>'
+          +'<div class="subh" style="margin-top:18px">Anni archiviati</div>'
+          +'<div id="archList" class="hint">Carico l’archivio…</div>'
         +'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Backup dei dati</h2>'
@@ -4123,6 +4217,8 @@ import * as repo from './js/repo.js';
         commitEnts(); repo.saveDiritti(DB.entitlements);
         refreshChip(); renderImpostazioni(); toast('Permessi salvati');
       };
+      const bca=document.getElementById('btnChiudiAnno'); if(bca)bca.onclick=chiudiAnno;
+      caricaArchivio();
       view.querySelectorAll('.addperiod').forEach(b=>b.onclick=()=>{
         commitSettings();
         const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;

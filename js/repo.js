@@ -268,6 +268,28 @@ export async function deletePersona(id) {
   check('eliminazione persona', await supabase.from('persone').delete().eq('id', id));
 }
 
+/* ---- archivio anni chiusi ---- */
+export async function listArchivi() {
+  // niente onError/toast qui: se la tabella manca lo dice la UI in sezione
+  const { data, error } = await supabase.from('archivi')
+    .select('id,anno_label,chiuso_il,saldo_finale_min')
+    .order('chiuso_il', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+export async function getArchivio(id) {
+  const r = await supabase.from('archivi').select('*').eq('id', id).single();
+  return check('lettura archivio', r);
+}
+export async function insertArchivio(a) {
+  const r = await supabase.from('archivi').insert({
+    anno_label: a.anno_label,
+    saldo_finale_min: a.saldo_finale_min,
+    dati: a.dati,
+  }).select('id').single();
+  return String(check('archiviazione anno', r).id);
+}
+
 /** Azzera solo le giornate: timbrature (entries+skipDays) e autorizzazioni. */
 export async function clearTimbrature() {
   const u = await uid();
