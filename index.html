@@ -535,6 +535,12 @@ if (/[#&]type=(invite|recovery|signup|magiclink)/.test(location.hash) || /[#&]er
 /* Tema chiaro/scuro applicato PRIMA del primo disegno: scelta salvata in
    localStorage, altrimenti si segue il sistema (tema.css, brief §3). */
 try{var _t=localStorage.getItem('ctm:tema');if(_t==='dark'||_t==='light')document.documentElement.setAttribute('data-theme',_t);}catch(e){}
+/* iOS ignora user-scalable=no nel viewport: si bloccano i gesti di zoom
+   direttamente (pinch e doppio tocco), cosi' la pagina resta ferma. */
+document.addEventListener('gesturestart',function(e){e.preventDefault();},{passive:false});
+document.addEventListener('gesturechange',function(e){e.preventDefault();},{passive:false});
+/* il doppio tocco lo disinnesca touch-action:manipulation nel CSS,
+   che non interferisce coi tocchi rapidi sul tastierino */
 </script>
 </head>
 <body>

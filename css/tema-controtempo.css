@@ -256,6 +256,20 @@ select:focus,input:focus,textarea:focus,
 /* ---------- 3l. niente trabocco orizzontale (fascia bianca) --------------- */
 html,body{overflow-x:hidden}
 #appRoot{overflow-x:clip}
+html{touch-action:manipulation}   /* iOS: niente zoom da doppio tocco */
+
+/* calendario attivita: su schermo stretto si adatta, niente scorrimento */
+@media (max-width:760px){
+  #appRoot .cal{min-width:0}
+  .cal-wrap{overflow-x:hidden}
+  .cal-head,.cal-body{grid-template-columns:34px repeat(6,1fr)}
+  .cal-gutter .hr span{font-size:8.5px;right:3px}
+  .cal-head .dn{font-size:9px;letter-spacing:.1px}
+  .cal-head .dd{font-size:13px}
+  #appRoot .event{padding:2px 3px}
+  .event .et{font-size:9.5px}
+  .event .eh{font-size:8px}
+}
 .ppl-item{flex-wrap:wrap;row-gap:8px}
 .ppl-item .ppl-main{min-width:0;flex:1 1 120px}
 .ppl-item .nm{overflow-wrap:anywhere}
