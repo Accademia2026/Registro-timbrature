@@ -4538,8 +4538,21 @@ import * as repo from './js/repo.js';
         console.error('[repo]',ctx,err);
         try{toast('⚠️ Salvataggio non riuscito: controlla la connessione');}catch(_){}
       });
-      try{ DB=await repo.loadAll(); }
-      catch(_){ gate.style.display=''; agSay('Caricamento dati non riuscito: riprova.','err'); return; }
+      /* al risveglio della PWA il token puo' essere in rinnovo e la rete
+         ancora fredda: si riprova da soli prima di disturbare l'utente */
+      let dati=null;
+      for(let tentativo=1;tentativo<=3;tentativo++){
+        try{ await sessione(); dati=await repo.loadAll(); break; }
+        catch(_){ if(tentativo<3) await new Promise(r=>setTimeout(r,800*tentativo)); }
+      }
+      if(!dati){
+        gate.style.display='';
+        agBox.innerHTML='<p class="sub" style="text-align:center;margin:0 0 6px">Non riesco a leggere i dati. Controlla la connessione e riprova.</p>'
+          +'<button class="btn btn-primary" id="agRetry">Riprova</button>';
+        document.getElementById('agRetry').onclick=()=>{agZitto();avviaApp();};
+        return;
+      }
+      DB=dati;
       /* primo accesso: semina i diritti/limiti di default del prototipo */
       if(!DB.entitlements.length){
         DB.entitlements=seedData().entitlements;
