@@ -3592,6 +3592,7 @@ import * as repo from './js/repo.js';
       if(kpField&&kpField!==el)finalizeField();
       if(kpField)kpField.classList.remove('is-active');
       kpField=el; el.classList.add('is-active');
+      if(el.dataset.scht!=null) delete el.dataset.suggerito;   /* scelta esplicita dell'utente */
       kpBuf=(el.value||el.dataset.val||'').replace(/\D/g,'').slice(0,4);
       const w=document.getElementById('kpWhich');
       if(w){
@@ -4288,64 +4289,181 @@ import * as repo from './js/repo.js';
     /* ---------- Impostazioni ---------- */
     const SD_=['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
     const IDX_=[1,2,3,4,5,6]; /* lun-sab: niente domenica */
-    const openPer={pres:null,study:null};   /* variazione aperta per tipo */
-    function periodsEditorHTML(kind){
-      const list = kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-      const tbtn=(pi,wd,quale,val)=>'<button class="scht-btn tinput '+(val?'':'is-empty')+'" data-scht data-k="'+kind+'" data-pi="'+pi+'" data-'+quale+'="'+wd+'" data-val="'+(val||'')+'">'+(val||'––:––')+'</button>';
+    /* ============ Orario di lavoro: presenza + studio in un'unica tabella ============
+       Modello dati invariato (schedulePeriods / studyPeriods), ma le due liste
+       vengono tenute ALLINEATE (stesse date di validita', stesso numero di
+       periodi): il periodo i-esimo della tabella e' la coppia [pres[i], study[i]].
+       Vincoli: fasce non sovrapposte, presenza+studio <= 9h al giorno,
+       totale settimanale = 36h (senza, non si salva). */
+    const ORE_SETT=36*60;
+    const openPer={pres:null};   /* variazione aperta */
+    let openWd=null;             /* giorno aperto dentro la variazione */
+    function allineaPeriodi(){
+      const P=DB.schedulePeriods, S=DB.studyPeriods;
+      const froms=[...new Set([...P.map(x=>x.from),...S.map(x=>x.from)])].sort();
+      const ok=P.length===froms.length&&S.length===froms.length&&froms.every((f,i)=>P[i].from===f&&S[i].from===f);
+      if(ok)return false;
+      const vuoto=()=>({from:'',schedule:{1:0,2:0,3:0,4:0,5:0,6:0,0:0},slots:{}});
+      const pick=(list,from)=>{
+        const ex=list.find(x=>x.from===from); if(ex)return ex;
+        const base=periodFor(list,from||'0000-00-00')||vuoto();
+        return {from, schedule:{...base.schedule}, slots:JSON.parse(JSON.stringify(base.slots||{}))};
+      };
+      DB.schedulePeriods=froms.map(f=>pick(P,f));
+      DB.studyPeriods=froms.map(f=>pick(S,f));
+      return true;
+    }
+    /* valore di una fascia: dal DOM se il giorno e' aperto, altrimenti dal modello */
+    function slotDi(kind,pi,wd){
+      const list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+      const m=(list[pi]&&list[pi].slots&&list[pi].slots[wd])||{};
+      const q=x=>view.querySelector('[data-scht][data-k="'+kind+'"][data-pi="'+pi+'"][data-'+x+'="'+wd+'"]');
+      const bs=q('s'), be=q('e');
+      const bp=view.querySelector('input.schpzin[data-k="'+kind+'"][data-pi="'+pi+'"][data-bp="'+wd+'"]');
+      return { start: bs?(bs.dataset.val||''):(m.start||''), end: be?(be.dataset.val||''):(m.end||''), pausa: bp?(parseInt(bp.value,10)||0):(+m.pausa||0) };
+    }
+    function nettoSlot(sl){const ds=t2m(sl.start),de=t2m(sl.end);return (ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(sl.pausa||0)):0;}
+    function periodNet(kind,pi,wd){return nettoSlot(slotDi(kind,pi,wd));}
+    function giornoInfo(pi,wd){
+      const a=slotDi('pres',pi,wd), b=slotDi('study',pi,wd);
+      const pn=nettoSlot(a), sn=nettoSlot(b);
+      const overlap=pn>0&&sn>0&&t2m(b.start)<t2m(a.end)&&t2m(b.end)>t2m(a.start);
+      return {a,b,pn,sn,tot:pn+sn,overlap,err:overlap||pn+sn>DAILY_CAP};
+    }
+    function verificaPeriodo(pi){
+      let pres=0,stud=0; const errori=[], giorni={};
+      IDX_.forEach((wd,i)=>{
+        const g=giornoInfo(pi,wd); giorni[wd]=g; pres+=g.pn; stud+=g.sn;
+        if(g.overlap)errori.push(SD_[i]+': presenza e studio si sovrappongono');
+        if(g.tot>DAILY_CAP)errori.push(SD_[i]+': '+fmtHM(g.tot)+' supera le 9 ore');
+      });
+      const tot=pres+stud;
+      if(tot<ORE_SETT)errori.push('Mancano '+fmtHM(ORE_SETT-tot)+' alle 36 ore settimanali');
+      if(tot>ORE_SETT)errori.push('Superi le 36 ore di '+fmtHM(tot-ORE_SETT));
+      return {pres,stud,tot,errori,giorni};
+    }
+    function riassuntoGiorno(pi,wd){
+      const g=giornoInfo(pi,wd);
+      if(!g.pn&&!g.sn)return '<span class="hint2">riposo</span>';
+      let h=g.pn?'<div><i class="kl2 p"></i>'+g.a.start+'–'+g.a.end+(g.a.pausa?' <span class="hint2">pausa '+g.a.pausa+'</span>':'')+'</div>':'<div class="hint2">— nessuna presenza</div>';
+      h+=g.sn?'<div class="s2"><i class="kl2 s"></i>'+g.b.start+'–'+g.b.end+'</div>':'<div class="hint2">— nessuno studio</div>';
+      return h;
+    }
+    function totGiornoHTML(pi,wd){
+      const g=giornoInfo(pi,wd);
+      if(!g.tot)return '—';
+      const main=g.sn?fmtHM(g.pn)+' + '+fmtHM(g.sn):fmtHM(g.pn);
+      const sub=g.overlap?'sovrapposte':(g.tot>DAILY_CAP?'oltre le 9h':'= '+fmtHM(g.tot)+' su 9h');
+      return '<span'+(g.err?' class="err2"':'')+'>'+main+'</span><small'+(g.err?' class="err2"':'')+'>'+sub+'</small>';
+    }
+    function hintGiorno(pi,wd){
+      const g=giornoInfo(pi,wd);
+      if(g.overlap)return 'Le due fasce si sovrappongono: sposta lo studio dopo la presenza';
+      if(g.tot>DAILY_CAP)return 'Oltre il tetto di 9 ore al giorno';
+      return 'Totale giorno '+fmtHM(g.tot)+' su 9h · '+(DAILY_CAP-g.tot>0?'resta '+fmtHM(DAILY_CAP-g.tot)+' disponibile':'giornata piena');
+    }
+    function piedeHTML(pi){
+      const v=verificaPeriodo(pi), pct=x=>Math.min(100,x/ORE_SETT*100);
+      return '<span><i class="kl2 p"></i>Presenza <b class="mono">'+fmtHM(v.pres)+'</b></span>'
+        +'<span><i class="kl2 s"></i>Studio <b class="mono">'+fmtHM(v.stud)+'</b></span>'
+        +'<span class="big2 mono'+(v.tot===ORE_SETT?'':' neg')+'">'+fmtHM(v.tot)+' / 36h</span>'
+        +'<div class="meter2"><i class="a" style="width:'+pct(v.pres)+'%"></i><i class="b" style="width:'+pct(v.stud)+'%"></i></div>'
+        +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'<div class="ok2">✓ 36 ore, nessuna sovrapposizione</div>');
+    }
+    function orarioEditorHTML(){
+      if(allineaPeriodi()){ savePeriods('pres'); savePeriods('study'); }
+      const P=DB.schedulePeriods, S=DB.studyPeriods;
+      const tbtn=(kind,pi,wd,quale,val)=>'<button class="scht-btn tinput '+(val?'':'is-empty')+'" data-scht data-k="'+kind+'" data-pi="'+pi+'" data-'+quale+'="'+wd+'" data-val="'+(val||'')+'">'+(val||'––:––')+'</button>';
       const dataIt=f=>{if(!f)return '';const d=parseISO(f);return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+String(d.getFullYear()).slice(2);};
-      const blocks = list.map((p,pi)=>{
-        const aperto=openPer[kind]===pi;
-        const sum=Object.values(p.schedule).reduce((a,b)=>a+(+b||0),0);
-        /* intestazione chiusa: solo validita' e totale, come i giorni in Timbrature */
+      const blocks=P.map((p,pi)=>{
+        const s=S[pi]||{slots:{}}, aperto=openPer.pres===pi, v=verificaPeriodo(pi);
         let h='<div class="period'+(aperto?' period--open':'')+'">'
-          +'<div class="period-tap" data-per-toggle="'+kind+'" data-pi="'+pi+'">'
+          +'<div class="period-tap" data-per-toggle="pres" data-pi="'+pi+'">'
             +'<span class="period-lbl">'+(pi===0?'Dall’inizio':'Dal '+dataIt(p.from))+'</span>'
-            +'<span class="period-sum" data-sumfor="'+kind+'-'+pi+'">'+fmtHM(sum)+'/sett.</span>'
+            +'<span class="period-sum mono'+(v.tot===ORE_SETT&&!v.errori.length?'':' neg')+'" data-sumfor="pres-'+pi+'">'+fmtHM(v.tot)+' / 36h</span>'
             +'<span class="per-chev">'+(aperto?'▾':'▸')+'</span>'
           +'</div>';
         if(aperto){
-          const rows=IDX_.map((wd,i)=>{const sl=(p.slots&&p.slots[wd])||{};return '<div class="schrow">'
-              +'<span class="schd">'+SD_[i].slice(0,3)+'</span>'
-              +'<span class="schoro" data-oro="'+kind+'-'+pi+'-'+wd+'">'+((p.schedule[wd]||0)>0?fmtHM(p.schedule[wd]):'—')+'</span>'
-              +tbtn(pi,wd,'s',sl.start||'')
-              +tbtn(pi,wd,'e',sl.end||'')
-              +'<input class="schpzin" type="number" min="0" step="5" data-k="'+kind+'" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0">'
-            +'</div>';}).join('');
+          const righe=IDX_.map((wd,i)=>{
+            const sl=(p.slots&&p.slots[wd])||{}, ss=(s.slots&&s.slots[wd])||{}, g=v.giorni[wd], apertoG=openWd===wd;
+            let r='<div class="drow2'+(apertoG?' drow2--sel':'')+(g.err?' drow2--err':'')+'" data-day-toggle="'+wd+'">'
+              +'<span class="d2">'+SD_[i].slice(0,3)+'</span>'
+              +'<div class="two2" data-two="'+pi+'-'+wd+'">'+riassuntoGiorno(pi,wd)+'</div>'
+              +'<span class="tot2 mono" data-tot2="'+pi+'-'+wd+'">'+totGiornoHTML(pi,wd)+'</span>'
+            +'</div>';
+            if(apertoG){
+              r+='<div class="dopen2">'
+                +'<div class="lab2"><i class="kl2 p"></i>Presenza</div>'
+                +'<div class="pills2">'+tbtn('pres',pi,wd,'s',sl.start||'')+'<span class="arr2">→</span>'+tbtn('pres',pi,wd,'e',sl.end||'')
+                  +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="pres" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0"></div>'
+                +'<div class="lab2"><i class="kl2 s"></i>Studio <span class="hint2" style="text-transform:none;letter-spacing:0">· si propone dopo la presenza</span></div>'
+                +'<div class="pills2">'+tbtn('study',pi,wd,'s',ss.start||'')+'<span class="arr2">→</span>'+tbtn('study',pi,wd,'e',ss.end||'')+'</div>'
+                +'<div class="hint2" data-dayhint="'+pi+'-'+wd+'">'+hintGiorno(pi,wd)+'</div>'
+              +'</div>';
+            }
+            return r;
+          }).join('');
           h+='<div class="period-body">'
             +'<div class="field" style="margin:2px 0 10px"><label>'+(pi===0?'Valido dall’inizio (settimana del)':'Valido dalla settimana del')+'</label>'
-              +'<input type="date" data-k="'+kind+'" data-pi="'+pi+'" data-from value="'+p.from+'"></div>'
-            +'<div class="schhead"><span></span><span>ore</span><span>inizio</span><span>fine</span><span>pausa</span></div>'
-            +'<div class="schlist">'+rows+'</div>'
+              +'<input type="date" data-k="pres" data-pi="'+pi+'" data-from value="'+p.from+'"></div>'
+            +'<div class="orario-list">'+righe+'</div>'
+            +'<div class="orario-foot" data-foot="'+pi+'">'+piedeHTML(pi)+'</div>'
             +'<div class="setrow" style="margin:12px 0 0;gap:8px">'
-              +'<button class="btn ghost dsm" data-dupperiod data-k="'+kind+'" data-pi="'+pi+'">Duplica settimana</button>'
-              +(pi>0?'<button class="linkbtn del" data-k="'+kind+'" data-pi="'+pi+'" data-removeperiod>Rimuovi</button>':'')
+              +'<button class="btn" data-salvaorario="'+pi+'">Salva orario</button>'
+              +'<button class="btn ghost dsm" data-completa36="'+pi+'">Completa a 36h</button>'
+              +'<button class="btn ghost dsm" data-dupperiod data-k="pres" data-pi="'+pi+'">Duplica</button>'
+              +(pi>0?'<button class="linkbtn del" data-k="pres" data-pi="'+pi+'" data-removeperiod>Rimuovi</button>':'')
             +'</div>'
           +'</div>';
         }
         return h+'</div>';
       }).join('');
-      return blocks
-        +'<div class="setrow" style="margin:14px 0 0;gap:10px">'
-          +'<button class="btn" data-savekind="'+kind+'">Salva orario</button>'
-          +'<button class="btn ghost addperiod" data-k="'+kind+'">+ Variazione di orario</button>'
-        +'</div>';
+      return blocks+'<div class="setrow" style="margin:14px 0 0"><button class="btn ghost addperiod" data-k="pres">+ Variazione di orario</button></div>';
     }
-    function schtVal(kind,pi,wd,quale){
-      const b=view.querySelector('[data-scht][data-k="'+kind+'"][data-pi="'+pi+'"][data-'+quale+'="'+wd+'"]');
-      return b?(b.dataset.val||''):'';
-    }
-    function periodNet(kind,pi,wd){
-      const p=view.querySelector('input.schpzin[data-k="'+kind+'"][data-pi="'+pi+'"][data-bp="'+wd+'"]');
-      const ds=t2m(schtVal(kind,pi,wd,'s')), de=t2m(schtVal(kind,pi,wd,'e'));
-      return (ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(parseInt(p&&p.value,10)||0)):0;
-    }
-    function periodSum(kind,pi){let s=0;IDX_.forEach(wd=>s+=periodNet(kind,pi,wd));return s;}
-    function updPeriodSum(kind,pi){const el=view.querySelector('[data-sumfor="'+kind+'-'+pi+'"]');if(el)el.textContent=fmtHM(periodSum(kind,pi))+'/sett.';}
     function updateDay(kind,pi,wd){
-      const net=periodNet(kind,pi,wd);
-      const disp=view.querySelector('[data-oro="'+kind+'-'+pi+'-'+wd+'"]');
-      if(disp)disp.textContent=net>0?fmtHM(net):'—';
-      updPeriodSum(kind,pi);
+      /* suggerimento: lo studio parte dove finisce la presenza */
+      if(kind==='pres'){
+        const a=slotDi('pres',pi,wd);
+        const bs=view.querySelector('[data-scht][data-k="study"][data-pi="'+pi+'"][data-s="'+wd+'"]');
+        /* segue la fine della presenza finche' l'utente non tocca lo studio */
+        if(bs&&(!bs.dataset.val||bs.dataset.suggerito==='1')&&t2m(a.end)!=null){
+          bs.dataset.val=a.end;bs.textContent=a.end;bs.classList.remove('is-empty');bs.dataset.suggerito='1';
+        }
+      }
+      const two=view.querySelector('[data-two="'+pi+'-'+wd+'"]'); if(two)two.innerHTML=riassuntoGiorno(pi,wd);
+      const t=view.querySelector('[data-tot2="'+pi+'-'+wd+'"]'); if(t)t.innerHTML=totGiornoHTML(pi,wd);
+      const hnt=view.querySelector('[data-dayhint="'+pi+'-'+wd+'"]'); if(hnt)hnt.textContent=hintGiorno(pi,wd);
+      const riga=view.querySelector('.drow2[data-day-toggle="'+wd+'"]'); if(riga)riga.classList.toggle('drow2--err',giornoInfo(pi,wd).err);
+      const foot=view.querySelector('[data-foot="'+pi+'"]'); if(foot)foot.innerHTML=piedeHTML(pi);
+      const sum=view.querySelector('[data-sumfor="pres-'+pi+'"]');
+      if(sum){const v=verificaPeriodo(pi); sum.textContent=fmtHM(v.tot)+' / 36h'; sum.classList.toggle('neg',v.tot!==ORE_SETT||v.errori.length>0);}
+    }
+    /* distribuisce le ore mancanti a 36 come studio dopo la presenza, entro le 9h/giorno */
+    function completaA36(pi){
+      const P=DB.schedulePeriods[pi], S=DB.studyPeriods[pi];
+      let v=verificaPeriodo(pi), resto=ORE_SETT-v.tot;
+      if(resto<=0)return false;
+      for(const wd of IDX_){
+        if(resto<=0)break;
+        const g=v.giorni[wd]; if(!g.pn)continue;
+        const spazio=DAILY_CAP-g.tot; if(spazio<=0)continue;
+        const agg=Math.min(resto,spazio);
+        S.slots[wd]=S.slots[wd]||{};
+        const inizio=g.sn?g.b.end:g.a.end;
+        const fine=addMin(inizio,agg);
+        if(t2m(fine)<=t2m(inizio))continue;
+        if(!g.sn)S.slots[wd].start=inizio;
+        S.slots[wd].end=fine;
+        resto-=agg;
+        v=verificaPeriodo(pi);
+      }
+      IDX_.forEach(wd=>{const sl=S.slots[wd]||{};S.schedule[wd]=nettoSlot(sl);});
+      return true;
+    }
+    function ordinaCoppie(){
+      const P=DB.schedulePeriods, S=DB.studyPeriods;
+      const ord=P.map((_,i)=>i).sort((a,b)=>P[a].from<P[b].from?-1:(P[a].from>P[b].from?1:0));
+      DB.schedulePeriods=ord.map(i=>P[i]); DB.studyPeriods=ord.map(i=>S[i]||{from:P[i].from,schedule:{1:0,2:0,3:0,4:0,5:0,6:0,0:0},slots:{}});
     }
     /* ---------- chiusura anno e archivio ---------- */
     async function chiudiAnno(){
@@ -4434,21 +4552,39 @@ import * as repo from './js/repo.js';
       document.getElementById('archClose').onclick=closeModal;
     }
 
-    function commitPeriods(kind){
-      const list = kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-      view.querySelectorAll('input[data-from][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;list[pi].from=i.value?iso(mondayOf(parseISO(i.value))):(pi===0?'':list[pi].from);});
-      view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-s]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.s;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].start=b.dataset.val||'';});
-      view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-e]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.e;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].end=b.dataset.val||'';});
-      view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].pausa=Math.max(0,parseInt(i.value,10)||0);});
-      list.forEach(p=>{IDX_.forEach(wd=>{const sl=(p.slots&&p.slots[wd])||{};const ds=t2m(sl.start),de=t2m(sl.end);p.schedule[wd]=(ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(sl.pausa||0)):0;});p.schedule[0]=0;p.slots[0]={};});
-      list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
+    /* legge dal DOM i campi della tabella unica e li riporta nel modello,
+       mantenendo accoppiate le liste presenza/studio */
+    function commitOrario(){
+      const P=DB.schedulePeriods, S=DB.studyPeriods;
+      view.querySelectorAll('input[data-from][data-k="pres"]').forEach(i=>{
+        const pi=+i.dataset.pi; if(!P[pi])return;
+        const f=i.value?iso(mondayOf(parseISO(i.value))):(pi===0?'':P[pi].from);
+        P[pi].from=f; if(S[pi])S[pi].from=f;
+      });
+      ['pres','study'].forEach(kind=>{
+        const list=kind==='pres'?P:S;
+        view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-s]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.s;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].start=b.dataset.val||'';});
+        view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-e]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.e;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].end=b.dataset.val||'';});
+        view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].pausa=Math.max(0,parseInt(i.value,10)||0);});
+        list.forEach(p=>{p.slots=p.slots||{};p.schedule=p.schedule||{};IDX_.forEach(wd=>{p.schedule[wd]=nettoSlot(p.slots[wd]||{});});p.schedule[0]=0;p.slots[0]={};});
+      });
+      ordinaCoppie();
+    }
+    /* tutti i periodi devono rispettare i vincoli prima di salvare */
+    function erroriOrario(){
+      const out=[];
+      DB.schedulePeriods.forEach((p,pi)=>{
+        const v=verificaPeriodo(pi);
+        if(v.errori.length)out.push((pi===0?'Dall’inizio':'Dal '+p.from)+' — '+v.errori[0]);
+      });
+      return out;
     }
     function commitEnts(){
       view.querySelectorAll('#entEdit select[data-f="unit"]').forEach(s=>{const ent=DB.entitlements.find(e=>e.id===s.dataset.ent); if(ent)ent.unit=s.value;});
       view.querySelectorAll('#entEdit input[data-ent]').forEach(i=>{const ent=DB.entitlements.find(e=>e.id===i.dataset.ent); if(ent)ent[i.dataset.f]=parseFloat(i.value)||0;});
     }
     function commitSettings(){
-      ['pres','study'].forEach(commitPeriods);
+      commitOrario();
       commitEnts();
       DB.startDate=document.getElementById('setStart').value;
       DB.yearLabel=aaLabel(DB.startDate);
@@ -4485,13 +4621,9 @@ import * as repo from './js/repo.js';
           +'</div>'
         +'</div>'
         +'<div class="divider"></div>'
-        +'<h2 class="sec-h">Orario in presenza</h2>'
-        +'<p class="sec-d">Ore previste e fascia oraria per ciascun giorno. Puoi aggiungere variazioni valide da una certa settimana in poi.</p>'
-        +'<div class="card" style="padding:14px 18px">'+periodsEditorHTML('pres')+'</div>'
-        +'<div class="divider"></div>'
-        +'<h2 class="sec-h">Orario di studio</h2>'
-        +'<p class="sec-d">Studio (lavoro svolto a casa): ha un contatore tutto suo, separato dal saldo e dal totale settimanale. Anche questo può variare nel corso dell’anno.</p>'
-        +'<div class="card" style="padding:14px 18px">'+periodsEditorHTML('study')+'</div>'
+        +'<h2 class="sec-h">Orario di lavoro · 36 ore</h2>'
+        +'<p class="sec-d">Per ogni giorno la fascia in <b>presenza</b> (con pausa) e la fascia di <b>studio</b>: non possono sovrapporsi, insieme non superano le 9 ore al giorno e in settimana devono fare esattamente 36 ore, altrimenti l’orario non si salva. Tocca un giorno per compilarlo; «Completa a 36h» piazza da solo lo studio mancante dopo la presenza.</p>'
+        +'<div class="card" style="padding:14px 18px">'+orarioEditorHTML()+'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Limiti permessi</h2>'
         +'<p class="sec-d"><b>Diritto</b> = spettanza annua · <b>Già fruito</b> = quanto consumato prima dell’app. «Valori CCNL» carica i riferimenti del CCNL Funzionari AFAM (ferie: regola per orario su 6 giorni e ≥3 anni di servizio — adatta il numero al tuo caso). Attenzione: i vincoli mensili, per evento e di coppia restano a tua cura.</p>'
@@ -4538,11 +4670,27 @@ import * as repo from './js/repo.js';
       view.querySelectorAll('input.schpzin[data-bp]').forEach(i=>i.addEventListener('input',()=>{
         updateDay(i.dataset.k,i.dataset.pi,+i.dataset.bp);
       }));
-      view.querySelectorAll('[data-savekind]').forEach(b=>b.onclick=()=>{
-        const kind=b.dataset.savekind;
-        commitPeriods(kind); savePeriods(kind);
-        refreshChip(); renderImpostazioni();
-        toast('Orario '+(kind==='pres'?'in presenza':'di studio')+' salvato');
+      view.querySelectorAll('[data-salvaorario]').forEach(b=>b.onclick=()=>{
+        commitOrario();
+        const errori=erroriOrario();
+        if(errori.length){ toast('Non salvato — '+errori[0]); renderImpostazioni(); return; }
+        savePeriods('pres'); savePeriods('study');
+        refreshChip(); renderImpostazioni(); toast('Orario salvato: 36 ore, tutto in regola');
+      });
+      view.querySelectorAll('[data-completa36]').forEach(b=>b.onclick=()=>{
+        const obj=DB.schedulePeriods[+b.dataset.completa36];
+        commitOrario();
+        const idx=DB.schedulePeriods.indexOf(obj);
+        const fatto=idx>=0&&completaA36(idx);
+        renderImpostazioni();
+        toast(fatto?'Studio distribuito dopo la presenza: controlla e salva':'Niente da completare: le 36 ore ci sono già');
+      });
+      view.querySelectorAll('[data-day-toggle]').forEach(r=>r.onclick=ev=>{
+        if(ev.target.closest('button,input'))return;
+        commitOrario();
+        const wd=+r.dataset.dayToggle;
+        openWd=(openWd===wd?null:wd);
+        renderImpostazioni();
       });
       const sp=document.getElementById('savePerm'); if(sp)sp.onclick=()=>{
         commitEnts(); repo.saveDiritti(DB.entitlements);
@@ -4561,42 +4709,45 @@ import * as repo from './js/repo.js';
       caricaArchivio();
       /* gli indici dei periodi valgono solo fino al prossimo commit (che
          riordina per data): si tiene l'oggetto e si ricalcola l'indice dopo */
+      /* i periodi sono coppie [presenza, studio]: ogni azione tocca entrambe le
+         liste; gli indici valgono fino al prossimo commit (riordina), quindi si
+         tiene l'oggetto e si ricalcola l'indice dopo */
+      const clona=p=>({from:p.from, schedule:{...(p.schedule||{})}, slots:JSON.parse(JSON.stringify(p.slots||{}))});
       view.querySelectorAll('[data-per-toggle]').forEach(t=>t.onclick=()=>{
-        const kind=t.dataset.perToggle, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-        const obj=list[+t.dataset.pi], eraAperto=openPer[kind]===+t.dataset.pi;
-        commitPeriods(kind);
-        openPer[kind]=eraAperto?null:list.indexOf(obj);
+        const obj=DB.schedulePeriods[+t.dataset.pi], eraAperto=openPer.pres===+t.dataset.pi;
+        commitOrario();
+        openPer.pres=eraAperto?null:DB.schedulePeriods.indexOf(obj);
+        openWd=null;
         renderImpostazioni();
       });
+      const nuovaCoppia=(srcP,srcS)=>{
+        const from=iso(mondayOf(new Date()));
+        const np={...clona(srcP),from}, ns={...clona(srcS||{schedule:{1:0,2:0,3:0,4:0,5:0,6:0,0:0},slots:{}}),from};
+        DB.schedulePeriods.push(np); DB.studyPeriods.push(ns);
+        ordinaCoppie();
+        openPer.pres=DB.schedulePeriods.indexOf(np); openWd=null;
+        savePeriods('pres'); savePeriods('study'); renderImpostazioni();
+      };
       view.querySelectorAll('.addperiod').forEach(b=>b.onclick=()=>{
         commitSettings();
-        const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-        const last=list[list.length-1];
-        const nuovo={from:iso(mondayOf(new Date())), schedule:{...last.schedule}, slots:JSON.parse(JSON.stringify(last.slots||{}))};
-        list.push(nuovo);
-        list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
-        openPer[kind]=list.indexOf(nuovo);
-        savePeriods(kind); renderImpostazioni();
+        const P=DB.schedulePeriods, S=DB.studyPeriods;
+        nuovaCoppia(P[P.length-1],S[S.length-1]);
+        toast('Nuova variazione: imposta la data di validità');
       });
       view.querySelectorAll('[data-dupperiod]').forEach(b=>b.onclick=()=>{
-        const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-        const src=list[+b.dataset.pi];
-        commitPeriods(kind);
-        const nuovo={from:iso(mondayOf(new Date())), schedule:{...src.schedule}, slots:JSON.parse(JSON.stringify(src.slots||{}))};
-        list.push(nuovo);
-        list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
-        openPer[kind]=list.indexOf(nuovo);
-        savePeriods(kind); renderImpostazioni();
+        const obj=DB.schedulePeriods[+b.dataset.pi];
+        commitOrario();
+        const idx=DB.schedulePeriods.indexOf(obj);
+        nuovaCoppia(DB.schedulePeriods[idx],DB.studyPeriods[idx]);
         toast('Settimana duplicata: imposta la data di validità');
       });
       view.querySelectorAll('[data-removeperiod]').forEach(b=>b.onclick=()=>{
-        const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-        const target=list[+b.dataset.pi];
+        const target=DB.schedulePeriods[+b.dataset.pi];
         commitSettings();
-        const idx=list.indexOf(target);
-        if(idx>0)list.splice(idx,1);
-        openPer[kind]=null;
-        savePeriods(kind); refreshChip(); renderImpostazioni();
+        const idx=DB.schedulePeriods.indexOf(target);
+        if(idx>0){DB.schedulePeriods.splice(idx,1);DB.studyPeriods.splice(idx,1);}
+        openPer.pres=null; openWd=null;
+        savePeriods('pres'); savePeriods('study'); refreshChip(); renderImpostazioni();
       });
       view.querySelectorAll('.unit-sel').forEach(s=>s.onchange=()=>{commitSettings();renderImpostazioni();});
       document.getElementById('setStart').oninput=()=>{document.getElementById('setYear').value=aaLabel(document.getElementById('setStart').value);};
@@ -4646,6 +4797,8 @@ import * as repo from './js/repo.js';
         commitSettings();
         repo.saveImpostazioni(DB);
         repo.saveDiritti(DB.entitlements);
+        const errori=erroriOrario();
+        if(errori.length){ refreshChip(); renderImpostazioni(); toast('Anno, saldo e permessi salvati. Orario NON salvato — '+errori[0]); return; }
         savePeriods('pres'); savePeriods('study');
         refreshChip(); toast('Impostazioni salvate');
       };
