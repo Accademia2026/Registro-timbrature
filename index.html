@@ -2983,6 +2983,32 @@ import * as repo from './js/repo.js';
       {id:'l104',         label:'L. 104 assistenza (max 18 h/mese)',  unit:'ORE',total:216,used0:0},
       {id:'studio',       label:'Diritto allo studio (150 ore)',      unit:'ORE',total:150,used0:0},
     ];
+    /* Backup di versioni precedenti dell'app (prototipo v1/v2): si
+       ricostruiscono i campi che il prototipo creava in init e si conserva
+       l'obbligo settimanale dei periodi che hanno solo 'schedule' senza
+       fasce orarie, sintetizzando una fascia dalle 08:00 della durata giusta. */
+    function normalizzaBackup(o){
+      o.entries=o.entries||{}; o.authorized=o.authorized||{}; o.skipDays=o.skipDays||{};
+      o.people=o.people||[]; o.events=o.events||[];
+      o.entitlements=Array.isArray(o.entitlements)?o.entitlements:[];
+      const from=o.startDate?iso(mondayOf(parseISO(o.startDate))):'';
+      if(!o.schedulePeriods) o.schedulePeriods=[{from, schedule:o.schedule||{1:300,2:360,3:420,4:360,5:0,6:0,0:0}, slots:o.scheduleSlots||{}}];
+      if(!o.studyPeriods)    o.studyPeriods=[{from, schedule:o.studySchedule||{}, slots:o.studySlots||{}}];
+      [...o.schedulePeriods,...o.studyPeriods].forEach(p=>{
+        p.slots=p.slots||{}; p.schedule=p.schedule||{};
+        [1,2,3,4,5,6,0].forEach(wd=>{
+          const sl=p.slots[wd]||{}, m=+p.schedule[wd]||0;
+          if(m>0 && !(t2m(sl.start)!=null && t2m(sl.end)!=null)){
+            p.slots[wd]={start:'08:00', end:pad(Math.floor((480+m)/60))+':'+pad((480+m)%60), pausa:0};
+          }
+        });
+      });
+      if(!o.entitlements.some(e=>e.id==='ferie_prec')){
+        const i=o.entitlements.findIndex(e=>e.id==='ferie');
+        o.entitlements.splice(i<0?0:i+1,0,{id:'ferie_prec',label:'Ferie anno precedente',unit:'GG',total:0,used0:0});
+      }
+      return o;
+    }
     function seedData(){
       return {
         startDate:'',
@@ -3159,13 +3185,16 @@ import * as repo from './js/repo.js';
     function doTimbra(){
       const now=new Date();
       const key=iso(now);
+      if(now.getDay()===0){toast('Oggi è domenica: il registro non prevede timbrature');return;}
+      if(isSkipped(key)){toast('Hai rimosso questa giornata dal registro: ripristinala dalle Timbrature per timbrare');return;}
       const hhmm=pad(now.getHours())+':'+pad(now.getMinutes());
       const e=DB.entries[key]||(DB.entries[key]={});
       if(!e.act)e.act='presenza';
       const slot=nextPunch(e);
       if(!slot){toast('Tutte le timbrature di oggi sono già registrate');return;}
       e[slot.f]=hhmm;
-      saveDay(key);refreshChip();
+      saveDay(key); repo.flush();   /* la timbratura parte subito, senza attesa */
+      refreshChip();
       toast(slot.l+' registrato alle '+hhmm);
       renderRiepilogo();
     }
@@ -3513,9 +3542,10 @@ import * as repo from './js/repo.js';
     const KP_LABELS={m1in:'ingresso mattina',m1out:'uscita mattina',m2in:'ingresso pomeriggio',m2out:'uscita pomeriggio'};
     function kpFmt(b){return b.length>2?b.slice(0,2)+':'+b.slice(2):b;}
     function kpDisplay(b){return b.length===0?'––:––':(b.length===2?b+':':kpFmt(b));}
-    function kpApply(v){
+    function kpApply(v, definitivo){
       /* scrive il valore sul campo attivo: giorno (Timbrature) o fascia
-         oraria (Impostazioni). Le Impostazioni si salvano col loro Salva. */
+         oraria (Impostazioni). Durante la digitazione aggiorna solo
+         l'anteprima; su DB si scrive alla conferma, con un orario completo. */
       kpField.textContent=v||'– –:– –';
       kpField.classList.toggle('is-empty', !v);
       kpField.dataset.val=v;
@@ -3526,13 +3556,21 @@ import * as repo from './js/repo.js';
       const key=kpField.dataset.k,f=kpField.dataset.f;
       const e=DB.entries[key]||(DB.entries[key]={});
       e[f]=v;
-      if(!e.act && (e.m1in||e.m1out||e.m2in||e.m2out)) e.act='presenza';
+      if(!definitivo){ recalcWeekLive(kpField,key,e); return; }
+      if(v && !e.act) e.act='presenza';
+      pulisciEntry(key,e);
       saveDay(key); recalcWeekLive(kpField,key,e);
+    }
+    function pulisciEntry(key,e){
+      /* una 'presenza' senza orari, permesso e note non e' una giornata */
+      const senzaOrari=!e.m1in&&!e.m1out&&!e.m2in&&!e.m2out;
+      if(e.act==='presenza' && senzaOrari && e.ph==null && !e.note) delete e.act;
+      if(!e.act && senzaOrari && e.ph==null && !e.note && e.studyMin==null) delete DB.entries[key];
     }
     function kpRefresh(){
       const disp=document.getElementById('kpDisp');
       if(disp)disp.textContent=kpDisplay(kpBuf);
-      if(kpField) kpApply(kpFmt(kpBuf));
+      if(kpField) kpApply(kpFmt(kpBuf), false);
     }
     function bufToTime(b){
       if(!b)return '';
@@ -3543,7 +3581,7 @@ import * as repo from './js/repo.js';
     }
     function finalizeField(){
       if(!kpField)return;
-      kpApply(bufToTime(kpBuf));
+      kpApply(bufToTime(kpBuf), true);
     }
     function openKeypad(el){
       if(kpField&&kpField!==el)finalizeField();
@@ -3627,7 +3665,13 @@ import * as repo from './js/repo.js';
     function onEntryChange(ev){
       const el=ev.target, key=el.dataset.k, f=el.dataset.f;
       const e=DB.entries[key]||(DB.entries[key]={});
-      if(f==='act'){ e.act=el.value; if(!e.act && e.studyMin==null) delete DB.entries[key]; }
+      if(f==='act'){
+        const haDati=e.m1in||e.m1out||e.m2in||e.m2out||e.ph!=null||e.note;
+        if(!el.value && haDati && !confirm('Svuotare questa giornata? Orari, permesso e note verranno cancellati.')){
+          el.value=e.act||''; return;
+        }
+        e.act=el.value; if(!e.act && e.studyMin==null) delete DB.entries[key];
+      }
       else if(f==='phh'){ e.ph=el.value===''?null:Math.round(parseFloat(el.value)*60); }
       else if(f==='studyh'){ e.studyMin=el.value===''?0:Math.round(parseFloat(el.value)*60); }
       else { e[f]=el.value; }
@@ -3895,20 +3939,23 @@ import * as repo from './js/repo.js';
       const note=document.getElementById('mNote').value;
       const ctBox=document.getElementById('teacherCountBox');
       const countTeacher = !!(ctBox && ctBox.style.display!=='none' && document.getElementById('mCountTeacher').checked);
+      const btnSave=document.getElementById('mSave');
+      if(btnSave){ if(btnSave.disabled)return; btnSave.disabled=true; }   /* niente doppio invio */
       try{
         if(nuovaPersona){
           nuovaPersona.id=await repo.insertPersona(nuovaPersona);
           DB.people.push(nuovaPersona); personId=nuovaPersona.id;
         }
         if(existing){
-          Object.assign(existing,{personId,date,start,end,mode,until,notify,note,countTeacher});
-          await repo.updateEvento(existing.id,existing);
+          const nuovi={personId,date,start,end,mode,until,notify,note,countTeacher};
+          await repo.updateEvento(existing.id,{...existing,...nuovi});
+          Object.assign(existing,nuovi);     /* lo stato locale cambia solo a salvataggio riuscito */
         } else {
           const nuovo={personId,date,start,end,mode,until,notify,note,countTeacher};
           nuovo.id=await repo.insertEvento(nuovo);
           DB.events.push(nuovo);
         }
-      }catch(_){return;}
+      }catch(_){ if(btnSave)btnSave.disabled=false; return; }
       closeModal(); scheduleNotifications(); renderAttivita(); toast('Attività salvata');
     }
     function deleteEvent(ev){
@@ -4018,12 +4065,14 @@ import * as repo from './js/repo.js';
       const roleSel=document.getElementById('pRole'), tBox=document.getElementById('pTeacherBox');
       const syncT=()=>tBox.style.display=roleSel.value==='alunno'?'flex':'none'; syncT(); roleSel.onchange=syncT;
       document.getElementById('pAdd').onclick=async()=>{
+        const btn=document.getElementById('pAdd');
         const nm=document.getElementById('pName').value.trim();
         if(!nm){toast('Inserisci un nome');return;}
+        if(btn.disabled)return; btn.disabled=true;   /* niente doppio invio */
         const role=roleSel.value;
         const person={name:nm,role,color:PALETTE[DB.people.length%PALETTE.length]};
         if(role==='alunno'){const tid=document.getElementById('pTeacher').value; if(tid)person.teacherId=tid;}
-        try{ person.id=await repo.insertPersona(person); }catch(_){return;}
+        try{ person.id=await repo.insertPersona(person); }catch(_){btn.disabled=false;return;}
         DB.people.push(person); renderAttivita();
       };
       view.querySelectorAll('[data-setteacher]').forEach(s=>s.onchange=()=>{
@@ -4081,7 +4130,7 @@ import * as repo from './js/repo.js';
         const f=v=> u? (Number.isInteger(v)?v:v.toFixed(2)) : v;
         const note=ent.id==='ferie_prec'&&ent.total>0?'<div class="perm-note">scalate per prime</div>':'';
         return '<div class="perm" data-perm="'+ent.id+'" style="cursor:pointer">'
-          +'<div class="top"><span class="name">'+ent.label+'</span><span class="unit">'+ent.unit+'</span></div>'
+          +'<div class="top"><span class="name">'+esc(ent.label)+'</span><span class="unit">'+esc(ent.unit)+'</span></div>'
           +'<div class="track"><div class="fill '+(res<=0?'full':'')+'" style="width:'+pct+'%"></div></div>'
           +'<div class="nums">'
             +'<span>fruito <b class="mono">'+f(used)+'</b> / '+f(ent.total)+'</span>'
@@ -4225,18 +4274,26 @@ import * as repo from './js/repo.js';
         permessi:DB.entitlements.map(e=>({label:e.label,unit:e.unit,total:e.total,usati:(e.used0||0)+usage(e.id)})),
       };
       toast('Archiviazione in corso…');
+      try{ await repo.flush(); }catch(_){}          /* niente salvataggi in coda dopo l'azzeramento */
+      let idArchivio;
       try{
-        await repo.insertArchivio({anno_label:label, saldo_finale_min:bal,
+        idArchivio=await repo.insertArchivio({anno_label:label, saldo_finale_min:bal,
           dati:{riepilogo, DB:JSON.parse(JSON.stringify(DB))}});
       }catch(_){return;}
-      /* nuovo anno */
+      try{ await repo.clearTimbrature(); }
+      catch(_){
+        /* senza DB pulito il nuovo anno conterebbe due volte: si annulla tutto */
+        try{ await repo.deleteArchivio(idArchivio); }catch(__){}
+        toast('Chiusura annullata: non sono riuscito ad azzerare le timbrature. Riprova con la connessione attiva.');
+        return;
+      }
+      /* nuovo anno (solo ora che il database e' pulito) */
       DB.entries={}; DB.authorized={}; DB.skipDays={};
       DB.initialBalanceMin=bal;
       DB.startDate=nuovo; DB.yearLabel=aaLabel(nuovo);
       const prev=DB.entitlements.find(e=>e.id==='ferie_prec');
       if(prev){prev.total=ferieRes; prev.used0=0;}
       DB.entitlements.forEach(e=>{if(e.id!=='ferie_prec')e.used0=0;});
-      try{await repo.clearTimbrature();}catch(_){}
       repo.saveImpostazioni(DB); repo.saveDiritti(DB.entitlements);
       weekCursor=null; refreshChip(); renderImpostazioni();
       toast('Anno '+label+' archiviato. Buon '+(DB.yearLabel||'nuovo anno')+'!');
@@ -4311,7 +4368,7 @@ import * as repo from './js/repo.js';
     }
     function renderImpostazioni(){
       const rows=DB.entitlements.map(e=>'<div class="entrow">'
-         +'<span class="entname">'+e.label+'</span>'
+         +'<span class="entname">'+esc(e.label)+'</span>'
          +'<select class="unit-sel" data-ent="'+e.id+'" data-f="unit"><option value="GG" '+(e.unit==='GG'?'selected':'')+'>giorni</option><option value="ORE" '+(e.unit==='ORE'?'selected':'')+'>ore</option></select>'
          +'<label class="entfield"><span>diritto</span><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="total" value="'+e.total+'"></label>'
          +'<label class="entfield"><span>già fruito</span><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="used0" value="'+e.used0+'"></label>'
@@ -4411,10 +4468,13 @@ import * as repo from './js/repo.js';
       };
       const bca=document.getElementById('btnChiudiAnno'); if(bca)bca.onclick=chiudiAnno;
       caricaArchivio();
+      /* gli indici dei periodi valgono solo fino al prossimo commit (che
+         riordina per data): si tiene l'oggetto e si ricalcola l'indice dopo */
       view.querySelectorAll('[data-per-toggle]').forEach(t=>t.onclick=()=>{
-        const kind=t.dataset.perToggle, pi=+t.dataset.pi;
+        const kind=t.dataset.perToggle, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+        const obj=list[+t.dataset.pi], eraAperto=openPer[kind]===+t.dataset.pi;
         commitPeriods(kind);
-        openPer[kind]=openPer[kind]===pi?null:pi;
+        openPer[kind]=eraAperto?null:list.indexOf(obj);
         renderImpostazioni();
       });
       view.querySelectorAll('.addperiod').forEach(b=>b.onclick=()=>{
@@ -4428,9 +4488,9 @@ import * as repo from './js/repo.js';
         savePeriods(kind); renderImpostazioni();
       });
       view.querySelectorAll('[data-dupperiod]').forEach(b=>b.onclick=()=>{
-        const kind=b.dataset.k, pi=+b.dataset.pi, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+        const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+        const src=list[+b.dataset.pi];
         commitPeriods(kind);
-        const src=list[pi];
         const nuovo={from:iso(mondayOf(new Date())), schedule:{...src.schedule}, slots:JSON.parse(JSON.stringify(src.slots||{}))};
         list.push(nuovo);
         list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
@@ -4439,9 +4499,11 @@ import * as repo from './js/repo.js';
         toast('Settimana duplicata: imposta la data di validità');
       });
       view.querySelectorAll('[data-removeperiod]').forEach(b=>b.onclick=()=>{
+        const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+        const target=list[+b.dataset.pi];
         commitSettings();
-        const kind=b.dataset.k, pi=+b.dataset.pi, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
-        if(pi>0)list.splice(pi,1);
+        const idx=list.indexOf(target);
+        if(idx>0)list.splice(idx,1);
         openPer[kind]=null;
         savePeriods(kind); refreshChip(); renderImpostazioni();
       });
@@ -4465,7 +4527,7 @@ import * as repo from './js/repo.js';
           if(!obj||typeof obj!=='object'||!Array.isArray(obj.entitlements)){toast('Non sembra un backup valido');return;}
           if(!confirm('Sostituire tutti i dati attuali con quelli del backup?')){e.target.value='';return;}
           toast('Importazione in corso…');
-          try{ await repo.replaceAll(obj); DB=await repo.loadAll(); }catch(_){return;}
+          try{ await repo.flush(); await repo.replaceAll(normalizzaBackup(obj)); DB=await repo.loadAll(); }catch(_){return;}
           weekCursor=null; diaryCursor=null; setView('riepilogo'); toast('Backup importato');
         };
         rd.readAsText(file);
@@ -4498,14 +4560,15 @@ import * as repo from './js/repo.js';
       };
       document.getElementById('clearPunches').onclick=async()=>{
         if(confirm('Azzerare tutte le timbrature registrate finora? Orari, permessi e impostazioni restano invariati.')){
+          try{ await repo.flush(); await repo.clearTimbrature(); }
+          catch(_){ toast('Azzeramento non riuscito: controlla la connessione'); return; }
           DB.entries={}; DB.authorized={}; DB.skipDays={};
-          try{ await repo.clearTimbrature(); }catch(_){}
           weekCursor=null; refreshChip(); setView('registro'); toast('Timbrature azzerate');
         }
       };
       document.getElementById('resetAll').onclick=async()=>{
         if(confirm('Azzerare tutti i dati e ripristinare i valori iniziali?')){
-          try{ await repo.replaceAll(seedData()); DB=await repo.loadAll(); }catch(_){return;}
+          try{ await repo.flush(); await repo.replaceAll(seedData()); DB=await repo.loadAll(); }catch(_){return;}
           weekCursor=null; setView('riepilogo'); toast('Dati ripristinati');
         }
       };
@@ -4642,7 +4705,7 @@ import * as repo from './js/repo.js';
       initKeypad();
       document.addEventListener('click',e=>{
         const k=document.getElementById('keypad');
-        if(!k||!k.classList.contains('show'))return;
+        if(!k||!k.classList.contains('is-open'))return;
         if(e.target.closest('#keypad')||e.target.classList.contains('tinput'))return;
         closeKeypad();
       });

@@ -1,2 +1,6 @@
 # Config locale di Claude Code (percorsi specifici di questa macchina)
 .claude/
+
+# File personali: mai nel repository
+Password.txt
+*.txt

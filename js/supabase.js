@@ -10,7 +10,16 @@ const SUPABASE_URL = 'https://jvibhznecyloendjmazt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_EFI5bE5Y__JATvhnmVguKg_R-dBDreJ';
 // ▲▲ ------------------------------------------------------------- ▲▲
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+/* keepalive: le richieste piccole (i salvataggi) sopravvivono alla chiusura
+   della pagina; il limite del browser per keepalive e' 64KB di corpo. */
+const fetchKeepalive = (input, init = {}) => {
+  const corpo = init.body;
+  const piccolo = !corpo || (typeof corpo === 'string' && corpo.length < 60000);
+  return fetch(input, piccolo ? { ...init, keepalive: true } : init);
+};
+export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  global: { fetch: fetchKeepalive },
+});
 
 export function configurata() {
   return !SUPABASE_URL.startsWith('INCOLLA') && !SUPABASE_KEY.startsWith('INCOLLA');

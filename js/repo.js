@@ -20,6 +20,8 @@ const t2m = (t) => {
 };
 const hm = (v) => (v ? String(v).slice(0, 5) : undefined);   // '08:30:00' → '08:30'
 const orNull = (v) => (v === '' || v === undefined ? null : v);
+/* il colore finisce in attributi style: si accetta solo un esadecimale */
+const coloreSicuro = (c) => (/^#[0-9a-f]{3,8}$/i.test(String(c || '')) ? c : '#52707a');
 
 /** Ricalcola schedule (minuti d'obbligo per giorno) dagli slots — stessa
     formula del prototipo: fine − inizio − pausa. */
@@ -128,7 +130,7 @@ export async function loadAll() {
       id: String(r.id),
       name: r.nome,
       role: r.ruolo,
-      color: r.colore,
+      color: coloreSicuro(r.colore),
       ...(r.docente_id != null ? { teacherId: String(r.docente_id) } : {}),
     })),
     events: eventi.map((r) => ({
@@ -289,6 +291,9 @@ export async function insertArchivio(a) {
   }).select('id').single();
   return String(check('archiviazione anno', r).id);
 }
+export async function deleteArchivio(id) {
+  check('annullamento archivio', await supabase.from('archivi').delete().eq('id', id));
+}
 
 /** Azzera solo le giornate: timbrature (entries+skipDays) e autorizzazioni. */
 export async function clearTimbrature() {
@@ -352,7 +357,7 @@ export async function replaceAll(DB) {
   const idMap = new Map();
   for (const p of DB.people || []) {
     const r = await supabase.from('persone').insert({
-      nome: p.name, ruolo: p.role, colore: p.color || null,
+      nome: p.name, ruolo: p.role, colore: coloreSicuro(p.color),
     }).select('id').single();
     idMap.set(p.id, check('import persona', r).id);
   }
