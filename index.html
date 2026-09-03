@@ -3419,9 +3419,13 @@ import * as repo from './js/repo.js';
         } else if(authMin>0){
           authBar='<div class="authbox"><span>\u2713 <b>'+fmtHM(authMin)+'</b> di straordinario autorizzato nel monte \u00b7 eccedenza '+fmtHM(excessMin)+'</span><span style="flex:1"></span>'
             +'<button class="ilink" id="authEdit">Modifica</button><button class="idanger" id="authRemove">Rimuovi</button></div>';
+        } else if(DB.authorized[weekCursor]===0){
+          /* risposta \u00abNo\u00bb gia' data: l'eccedenza resta fuori dal monte */
+          authBar='<div class="authbox"><span>Eccedenza di <b>'+fmtHM(excessMin)+'</b> non autorizzata come straordinario.</span><span style="flex:1"></span>'
+            +'<button class="ilink" id="authEdit">Cambia</button></div>';
         } else {
           authBar='<div class="authbox"><span>Hai <b>'+fmtHM(excessMin)+'</b> di ore eccedenti: sono straordinario autorizzato?</span><span style="flex:1"></span>'
-            +'<button class="ios-btn" id="authAdd">S\u00ec, nel monte</button></div>';
+            +'<button class="ios-btn" id="authAdd">S\u00ec</button><button class="ilink" id="authNo">No</button></div>';
         }
       }
 
@@ -3511,6 +3515,7 @@ import * as repo from './js/repo.js';
         refreshChip(); renderRegistro();
       };
       const aAdd=document.getElementById('authAdd'); if(aAdd)aAdd.onclick=()=>{authEditWeek=weekCursor;renderRegistro();};
+      const aNo=document.getElementById('authNo'); if(aNo)aNo.onclick=()=>{DB.authorized[weekCursor]=0;saveAuth(weekCursor);refreshChip();renderRegistro();};
       const aEdit=document.getElementById('authEdit'); if(aEdit)aEdit.onclick=()=>{authEditWeek=weekCursor;renderRegistro();};
       const aRem=document.getElementById('authRemove'); if(aRem)aRem.onclick=()=>{delete DB.authorized[weekCursor];authEditWeek=null;saveAuth(weekCursor);refreshChip();renderRegistro();};
       const aCancel=document.getElementById('authCancel'); if(aCancel)aCancel.onclick=()=>{authEditWeek=null;renderRegistro();};
@@ -3769,7 +3774,8 @@ import * as repo from './js/repo.js';
             +'<button class="iconbtn" id="cNext" aria-label="settimana successiva">›</button>'
           +'</div>'
         +'</div>'
-        +'<p class="diary-intro">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo di orario o giorno. <span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio (dalle Impostazioni).</p>'
+        +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc((personById(appunti.ev.personId)||{}).name||'Attività')+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
+        +'<p class="diary-intro">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana. <span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio. <button class="linkbtn" id="btnIcs" style="padding:2px 6px">⤓ Esporta per Apple/Google Calendar</button></p>'
         +'<div class="cal-wrap"><div class="cal"><div class="cal-head">'+head+'</div><div class="cal-body">'+gutter+cols+'</div></div></div>';
     }
     function wireCalendar(){
@@ -3783,10 +3789,55 @@ import * as repo from './js/repo.js';
         const rect=col.getBoundingClientRect();
         let min=H0*60+(e.clientY-rect.top)/HH*60;
         min=Math.round(min/30)*30; min=Math.max(H0*60,Math.min(H1*60-30,min));
-        openEventModal({dISO:col.dataset.date,start:pad(Math.floor(min/60))+':'+pad(min%60)});
+        const start=pad(Math.floor(min/60))+':'+pad(min%60);
+        if(appunti){ incollaAppunti(col.dataset.date,start); return; }
+        openEventModal({dISO:col.dataset.date,start});
       }));
+      const annulla=document.getElementById('appAnnulla'); if(annulla)annulla.onclick=()=>{appunti=null;renderAttivita();};
+      const ics=document.getElementById('btnIcs'); if(ics)ics.onclick=esportaICS;
+      /* swipe orizzontale sul calendario = settimana precedente/successiva */
+      const wrap=view.querySelector('.cal-wrap'); let sw=null;
+      if(wrap){
+        wrap.addEventListener('touchstart',e=>{ if(e.target.closest('.event')){sw=null;return;} const t=e.touches[0]; sw={x:t.clientX,y:t.clientY}; },{passive:true});
+        wrap.addEventListener('touchend',e=>{
+          if(!sw)return; const t=e.changedTouches[0]; const dx=t.clientX-sw.x, dy=t.clientY-sw.y; sw=null;
+          if(Math.abs(dx)>70 && Math.abs(dy)<50){
+            window._justDragged=true; setTimeout(()=>window._justDragged=false,400);
+            diaryCursor=iso(addDays(mon,dx<0?7:-7)); renderAttivita();
+          }
+        },{passive:true});
+      }
     }
-    let drag=null;
+    /* esportazione iCalendar (.ics): importabile in Apple Calendar e Google Calendar */
+    function esportaICS(){
+      const dt=(dISO,hhmm)=>dISO.replace(/-/g,'')+'T'+hhmm.replace(':','')+'00';
+      const escI=s=>String(s||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/[,;]/g,m=>'\\'+m);
+      const BYDAY=['SU','MO','TU','WE','TH','FR','SA'];
+      const stamp=new Date().toISOString().replace(/[-:]/g,'').slice(0,15)+'Z';
+      const righe=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Registro presenze//Conservatorio//IT','CALSCALE:GREGORIAN',
+        'X-WR-CALNAME:Registro attività','X-WR-TIMEZONE:Europe/Rome',
+        'BEGIN:VTIMEZONE','TZID:Europe/Rome',
+        'BEGIN:STANDARD','DTSTART:19701025T030000','RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU','TZOFFSETFROM:+0200','TZOFFSETTO:+0100','END:STANDARD',
+        'BEGIN:DAYLIGHT','DTSTART:19700329T020000','RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU','TZOFFSETFROM:+0100','TZOFFSETTO:+0200','END:DAYLIGHT',
+        'END:VTIMEZONE'];
+      DB.events.forEach(ev=>{
+        const p=personById(ev.personId), d=parseISO(ev.date);
+        righe.push('BEGIN:VEVENT','UID:registro-'+ev.id+'@conservatorio','DTSTAMP:'+stamp,
+          'DTSTART;TZID=Europe/Rome:'+dt(ev.date,ev.start),'DTEND;TZID=Europe/Rome:'+dt(ev.date,ev.end),
+          'SUMMARY:'+escI(p?p.name:'Attività'));
+        if(ev.note)righe.push('DESCRIPTION:'+escI(ev.note));
+        if(ev.mode==='weekly')righe.push('RRULE:FREQ=WEEKLY;BYDAY='+BYDAY[d.getDay()]+(ev.until?';UNTIL='+ev.until.replace(/-/g,'')+'T215959Z':''));
+        if(ev.notify!=null)righe.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+escI(p?p.name:'Attività'),'TRIGGER:-PT'+ev.notify+'M','END:VALARM');
+        righe.push('END:VEVENT');
+      });
+      righe.push('END:VCALENDAR');
+      const blob=new Blob([righe.join('\r\n')],{type:'text/calendar;charset=utf-8'});
+      const url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download='registro-attivita.ics'; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+      toast('Calendario esportato: aprilo per aggiungerlo ad Apple o Google Calendar');
+    }
+    let drag=null, appunti=null, pressTimer=null;
     function onEventPointerDown(e){
       if(e.button!==undefined && e.button!==0)return;
       const el=e.currentTarget, id=el.dataset.ev;
@@ -3797,16 +3848,28 @@ import * as repo from './js/repo.js';
       el.setPointerCapture&&el.setPointerCapture(e.pointerId);
       el.addEventListener('pointermove',onDragMove);
       el.addEventListener('pointerup',onDragUp);
+      /* pressione prolungata senza movimento: menu azioni al posto del drag */
+      clearTimeout(pressTimer);
+      pressTimer=setTimeout(()=>{
+        if(!drag||drag.moved)return;
+        const d=drag; drag=null;
+        d.el.removeEventListener('pointermove',onDragMove);
+        d.el.removeEventListener('pointerup',onDragUp);
+        try{ d.el.releasePointerCapture&&d.el.releasePointerCapture(e.pointerId); }catch(_){}
+        window._justDragged=true; setTimeout(()=>window._justDragged=false,400);
+        menuEvento(evObj);
+      },550);
       e.preventDefault();
     }
     function onDragMove(e){
       if(!drag)return;
       const dx=e.clientX-drag.sx, dy=e.clientY-drag.sy;
-      if(Math.abs(dx)>4||Math.abs(dy)>4)drag.moved=true;
+      if(Math.abs(dx)>4||Math.abs(dy)>4){drag.moved=true; clearTimeout(pressTimer);}
       drag.el.style.transform='translate('+dx+'px,'+dy+'px)';
       drag.el.style.zIndex=30; drag.el.style.opacity=.85;
     }
     function onDragUp(e){
+      clearTimeout(pressTimer);
       if(!drag)return;
       const d=drag; drag=null;
       d.el.removeEventListener('pointermove',onDragMove);
@@ -3846,10 +3909,38 @@ import * as repo from './js/repo.js';
         +(nOpt&&nOpt[0]!==''?riga('Promemoria', nOpt[1]):'')
         +(doc?riga('Contata anche per', esc(doc)):'')
         +(ev.note?riga('Nota', esc(ev.note)):'')
-        +'</div><div class="mfoot"><button class="btn ghost" id="evClose">Chiudi</button><span class="spacer"></span><button class="btn" id="evEdit">Modifica</button></div></div>';
+        +'</div><div class="mfoot"><button class="btn danger" id="evDel" title="Elimina">🗑</button><button class="btn ghost" id="evClose">Chiudi</button><span class="spacer"></span><button class="btn" id="evEdit">Modifica</button></div></div>';
       modalBg.classList.add('show');
       document.getElementById('evClose').onclick=closeModal;
       document.getElementById('evEdit').onclick=()=>openEventModal({ev});
+      document.getElementById('evDel').onclick=()=>deleteEvent(ev);
+    }
+    /* menu da pressione prolungata su un'attivita' del calendario */
+    function menuEvento(ev){
+      const p=personById(ev.personId);
+      const b=(id,cls,txt)=>'<button class="btn '+cls+'" id="'+id+'" style="width:100%;justify-content:flex-start">'+txt+'</button>';
+      modalBg.innerHTML='<div class="modal"><h3>'+esc(p?p.name:'Attività')+' <span class="muted" style="font-size:14px;font-family:var(--sans)">'+ev.start+'–'+ev.end+'</span></h3>'
+        +'<div class="mbody" style="gap:8px">'
+        +b('mnCopia','ghost','⧉ Copia')
+        +(ev.mode==='weekly'?'':b('mnTaglia','ghost','✂ Taglia'))
+        +b('mnMod','ghost','✎ Modifica')
+        +b('mnDel','danger','🗑 Elimina')
+        +'</div><div class="mfoot"><span class="spacer"></span><button class="btn ghost" id="mnAnnulla">Annulla</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('mnAnnulla').onclick=closeModal;
+      document.getElementById('mnMod').onclick=()=>openEventModal({ev});
+      document.getElementById('mnDel').onclick=()=>deleteEvent(ev);
+      document.getElementById('mnCopia').onclick=()=>{appunti={ev,taglia:false};closeModal();renderAttivita();toast('Copiata: tocca uno spazio libero per incollare');};
+      const t=document.getElementById('mnTaglia'); if(t)t.onclick=()=>{appunti={ev,taglia:true};closeModal();renderAttivita();toast('Tagliata: tocca uno spazio libero per spostarla');};
+    }
+    async function incollaAppunti(dISO,start){
+      const src=appunti.ev, dur=Math.max(15,(t2m(src.end)??0)-(t2m(src.start)??0));
+      const nuovo={personId:src.personId,date:dISO,start,end:addMin(start,dur),mode:'single',until:null,notify:src.notify,note:src.note||'',countTeacher:!!src.countTeacher};
+      try{
+        nuovo.id=await repo.insertEvento(nuovo); DB.events.push(nuovo);
+        if(appunti.taglia){ await repo.deleteEvento(src.id); DB.events=DB.events.filter(e=>e.id!==src.id); }
+      }catch(_){return;}
+      appunti=null; scheduleNotifications(); renderAttivita(); toast('Attività incollata');
     }
     function openEventModal(opts){
       const ev=opts.ev||null;
