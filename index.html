@@ -2964,6 +2964,25 @@ import * as repo from './js/repo.js';
       return 'transparent';
     }
 
+    /* Valori di riferimento CCNL Funzionari AFAM (personale T.A.).
+       Nota: l'app tiene contatori ANNUALI semplici; i vincoli mensili
+       (L.104), per-evento (lutto, matrimonio) e di coppia (figli) vanno
+       comunque rispettati a cura dell'utente. */
+    const CCNL_FUNZ=[
+      {id:'ferie',        label:'Ferie',                              unit:'GG', total:32, used0:0},
+      {id:'ferie_prec',   label:'Ferie anno precedente',              unit:'GG', total:0,  used0:0},
+      {id:'fest_soppressa',label:'Festività soppresse',               unit:'GG', total:4,  used0:0},
+      {id:'paternita',    label:'Congedo paternità (per nascita)',    unit:'GG', total:10, used0:0},
+      {id:'matrimonio',   label:'Matrimonio / unione civile',         unit:'GG', total:15, used0:0},
+      {id:'lutto',        label:'Lutto (3 gg per evento)',            unit:'GG', total:3,  used0:0},
+      {id:'esami',        label:'Concorsi ed esami',                  unit:'GG', total:8,  used0:0},
+      {id:'sangue',       label:'Donazione sangue (1 g/donazione)',   unit:'GG', total:4,  used0:0},
+      {id:'mal_figlio',   label:'Malattia figlio <3 anni (coppia)',   unit:'GG', total:30, used0:0},
+      {id:'personali',    label:'Motivi personali o familiari',       unit:'ORE',total:18, used0:0},
+      {id:'visita',       label:'Visite, terapie ed esami diagn.',    unit:'ORE',total:18, used0:0},
+      {id:'l104',         label:'L. 104 assistenza (max 18 h/mese)',  unit:'ORE',total:216,used0:0},
+      {id:'studio',       label:'Diritto allo studio (150 ore)',      unit:'ORE',total:150,used0:0},
+    ];
     function seedData(){
       return {
         startDate:'',
@@ -2971,22 +2990,7 @@ import * as repo from './js/repo.js';
         schedulePeriods:[{from:'', schedule:{1:0,2:0,3:0,4:0,5:0,6:0,0:0}, slots:{1:{},2:{},3:{},4:{},5:{},6:{},0:{}}}],
         studyPeriods:[{from:'', schedule:{1:0,2:0,3:0,4:0,5:0,6:0,0:0}, slots:{1:{},2:{},3:{},4:{},5:{},6:{},0:{}}}],
         initialBalanceMin:0,
-        entitlements:[
-          {id:'ferie',        label:'Ferie',                      unit:'GG', total:39, used0:0},
-          {id:'ferie_prec',   label:'Ferie anno precedente',      unit:'GG', total:0,  used0:0},
-          {id:'paternita',    label:'Paternità',                  unit:'GG', total:10, used0:0},
-          {id:'fest_soppressa',label:'Festività soppressa',       unit:'GG', total:4,  used0:0},
-          {id:'matrimonio',   label:'Congedo matrimoniale',       unit:'GG', total:15, used0:0},
-          {id:'sangue',       label:'Donazione sangue',           unit:'GG', total:12, used0:0},
-          {id:'esami',        label:'Permesso esami / concorsi',  unit:'GG', total:8,  used0:0},
-          {id:'mal_figlio',   label:'Malattia figlio retribuita', unit:'GG', total:5,  used0:0},
-          {id:'lutto',        label:'Lutto',                      unit:'GG', total:3,  used0:0},
-          {id:'studio',       label:'Permesso studio',            unit:'ORE',total:150,used0:0},
-          {id:'l104',         label:'L. 104',                     unit:'ORE',total:36, used0:0},
-          {id:'visita',       label:'Permesso visita medica',     unit:'ORE',total:36, used0:0},
-          {id:'personali',    label:'Permesso motivi personali',  unit:'ORE',total:18, used0:0},
-          {id:'sindacale',    label:'Sindacale',                  unit:'ORE',total:10, used0:0},
-        ],
+        entitlements:CCNL_FUNZ.map(e=>({...e})),
         entries:{},
         authorized:{},
         skipDays:{},
@@ -4342,9 +4346,10 @@ import * as repo from './js/repo.js';
         +'<div class="card" style="padding:14px 18px">'+periodsEditorHTML('study')+'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Limiti permessi</h2>'
-        +'<p class="sec-d"><b>Diritto</b> = spettanza annua · <b>Già fruito</b> = quanto consumato prima dell’app.</p>'
+        +'<p class="sec-d"><b>Diritto</b> = spettanza annua · <b>Già fruito</b> = quanto consumato prima dell’app. «Valori CCNL» carica i riferimenti del CCNL Funzionari AFAM (ferie: regola per orario su 6 giorni e ≥3 anni di servizio — adatta il numero al tuo caso). Attenzione: i vincoli mensili, per evento e di coppia restano a tua cura.</p>'
         +'<div class="card" style="padding:6px 16px 14px" id="entEdit">'+rows
-          +'<div class="setrow" style="margin:12px 0 0"><button class="btn" id="savePerm">Salva permessi</button></div>'
+          +'<div class="setrow" style="margin:12px 0 0;gap:8px"><button class="btn" id="savePerm">Salva permessi</button>'
+          +'<button class="btn ghost" id="ccnlPerm">Valori CCNL Funzionari</button></div>'
         +'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Chiusura anno</h2>'
@@ -4394,6 +4399,15 @@ import * as repo from './js/repo.js';
       const sp=document.getElementById('savePerm'); if(sp)sp.onclick=()=>{
         commitEnts(); repo.saveDiritti(DB.entitlements);
         refreshChip(); renderImpostazioni(); toast('Permessi salvati');
+      };
+      const cp=document.getElementById('ccnlPerm'); if(cp)cp.onclick=()=>{
+        if(!confirm('Riallineare l’elenco ai valori di riferimento del CCNL Funzionari AFAM?\n\nEtichette e diritti annui vengono sostituiti; il «già fruito» delle voci esistenti viene conservato.'))return;
+        DB.entitlements=CCNL_FUNZ.map(e=>{
+          const prima=DB.entitlements.find(x=>x.id===e.id);
+          return {...e, used0:prima?(prima.used0||0):0};
+        });
+        repo.saveDiritti(DB.entitlements);
+        refreshChip(); renderImpostazioni(); toast('Valori CCNL caricati');
       };
       const bca=document.getElementById('btnChiudiAnno'); if(bca)bca.onclick=chiudiAnno;
       caricaArchivio();
