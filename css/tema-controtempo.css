@@ -87,7 +87,13 @@
 .ios .day--riposo{background:transparent;box-shadow:none;border:1px dashed var(--ctm-linea)}
 .daylist .day{border-radius:0;border:0;border-top:1px solid var(--ctm-linea);box-shadow:none;
   background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
-.period{background:var(--velo);border-radius:9px;border-color:var(--ctm-linea)}
+.period{background:var(--velo);border-radius:9px;border-color:var(--ctm-linea);padding:10px 14px;margin-bottom:8px}
+.period-tap{display:flex;align-items:center;gap:12px;cursor:pointer;min-height:36px;
+  -webkit-tap-highlight-color:transparent}
+.period-lbl{font-weight:600;font-size:13.5px}
+.period-tap .period-sum{margin-left:auto}
+.per-chev{margin-left:8px;color:var(--ink-soft);font-size:12px}
+.period-body{margin-top:10px;border-top:1px solid var(--ctm-linea-soft);padding-top:10px}
 
 /* stat del riepilogo: niente pastelli fuori palette */
 .stat,.stat:nth-child(6n+1),.stat:nth-child(6n+2),.stat:nth-child(6n+3),
@@ -224,6 +230,9 @@ select:focus,input:focus,textarea:focus,
 .drow .dcol b{display:block;font-size:13px;text-transform:capitalize}
 .drow .dcol span{font-size:10.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
 .drow--oggi .dcol b{color:var(--teal)}
+/* il giorno di oggi ha la sua barra evidenziata */
+.drow--oggi{background:var(--yellow-wash);box-shadow:inset 3px 0 0 var(--yellow)}
+.drow--sel.drow--oggi,.drow--sel{background:var(--teal-wash)}
 .oggi-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--yellow);margin-left:4px;vertical-align:2px}
 .dtimes{flex:1;min-width:0;font-size:12.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -3224,7 +3224,7 @@ import * as repo from './js/repo.js';
       const todayStr=DAYNAMES[(now.getDay()+6)%7]+' '+now.getDate()+' '+MONTHS[now.getMonth()]+' '+now.getFullYear();
       const done=PUNCH.filter(([f])=>te[f]).map(([f,l])=>l+' <b class="mono">'+te[f]+'</b>');
       const clockTxt=pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
-      const recent5=wks.slice(-5).reverse();
+      const recent5=wks.slice().reverse();   /* tutte le settimane, piu recente in alto */
       let weekrows=recent5.map(m=>{
         const owk=obligationForWeek(m),tot=weekTotal(m),cc=tot-owk;
         const md=parseISO(m), lbl=md.getDate()+' '+MONTHS[md.getMonth()].slice(0,3);
@@ -3261,12 +3261,13 @@ import * as repo from './js/repo.js';
           +'<div><div class="group-header">Andamento</div><div class="group">'
             +'<div class="row"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+'</span></div>'
             +'<div class="row"><span class="row__label">Settimane in eccedenza</span><span class="row__value pos">'+over+'</span></div>'
+            +'<div class="row"><span class="row__label">Straordinario autorizzato</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+authForWeek(m),0))+'</span></div>'
             +'<div class="row"><span class="row__label">Ore di studio (a parte)</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekStudy(m),0))+'</span></div>'
             +'<div class="row"><span class="row__label">Giorni di ferie residui</span><span class="row__value">'+ferieRes+'</span></div>'
             +'<div class="row"><span class="row__label">Omesse timbrature</span><span class="row__value">'+omessaCount()+'</span></div>'
           +'</div></div>'
-          +'<div><div class="group-header">Ultime settimane \u00b7 obbligo '+fmtHM(obl)+'</div><div class="group">'+weekrows+'</div>'
-            +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa.</p></div>'
+          +'<div><div class="group-header">Settimane \u00b7 obbligo '+fmtHM(obl)+'</div><div class="group" style="max-height:330px;overflow-y:auto">'+weekrows+'</div>'
+            +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Scorri per la storia completa.</p></div>'
         +'</div>'
         +'</div>';
 
@@ -3378,16 +3379,16 @@ import * as repo from './js/repo.js';
       if(c>0){
         if(authEditWeek===weekCursor){
           const dh=Math.floor((authMin||excessMin)/60), dmn=(authMin||excessMin)%60;
-          authBar='<div class="authbox"><span>Eccedenza <b>autorizzata</b> (max '+fmtHM(excessMin)+'):</span>'
+          authBar='<div class="authbox"><span><b>Straordinario autorizzato</b> (max '+fmtHM(excessMin)+'):</span>'
             +'<input type="number" id="authH" min="0" max="'+Math.floor(excessMin/60)+'" value="'+dh+'">h'
             +'<input type="number" id="authM" min="0" max="59" value="'+dmn+'">m'
             +'<button class="ios-btn" id="authSave">Conferma</button><button class="ilink" id="authCancel">Annulla</button></div>';
         } else if(authMin>0){
-          authBar='<div class="authbox"><span>\u2713 <b>'+fmtHM(authMin)+'</b> nel saldo \u00b7 eccedenza '+fmtHM(excessMin)+'</span><span style="flex:1"></span>'
+          authBar='<div class="authbox"><span>\u2713 <b>'+fmtHM(authMin)+'</b> di straordinario autorizzato nel monte \u00b7 eccedenza '+fmtHM(excessMin)+'</span><span style="flex:1"></span>'
             +'<button class="ilink" id="authEdit">Modifica</button><button class="idanger" id="authRemove">Rimuovi</button></div>';
         } else {
-          authBar='<div class="authbox"><span>Eccedenza di <b>'+fmtHM(excessMin)+'</b> non nel saldo.</span><span style="flex:1"></span>'
-            +'<button class="ios-btn" id="authAdd">Aggiungi al saldo</button></div>';
+          authBar='<div class="authbox"><span>Hai <b>'+fmtHM(excessMin)+'</b> di ore eccedenti: sono straordinario autorizzato?</span><span style="flex:1"></span>'
+            +'<button class="ios-btn" id="authAdd">S\u00ec, nel monte</button></div>';
         }
       }
 
@@ -3763,7 +3764,7 @@ import * as repo from './js/repo.js';
       d.el.removeEventListener('pointermove',onDragMove);
       d.el.removeEventListener('pointerup',onDragUp);
       const evObj=DB.events.find(x=>x.id===d.id);
-      if(!d.moved){ if(evObj)openEventModal({ev:evObj}); return; }
+      if(!d.moved){ if(evObj)schedaEvento(evObj); return; }
       const dx=e.clientX-d.sx, dy=e.clientY-d.sy;
       const dayShift=Math.round(dx/d.colW);
       const deltaMin=Math.round((dy/HH*60)/15)*15;
@@ -3779,6 +3780,29 @@ import * as repo from './js/repo.js';
       renderAttivita();
     }
 
+    /* scheda riassuntiva di un evento: consultazione + pulsante Modifica */
+    function schedaEvento(ev){
+      const p=personById(ev.personId);
+      const d=parseISO(ev.date);
+      const dataIt=x=>{const q=parseISO(x);return pad(q.getDate())+'/'+pad(q.getMonth()+1)+'/'+String(q.getFullYear()).slice(2);};
+      const riga=(l,v)=>'<div class="arow"><span>'+l+'</span><b>'+v+'</b></div>';
+      const quando=ev.mode==='weekly'
+        ? 'ogni '+DAYNAMES[(d.getDay()+6)%7]+(ev.until?' · fino al '+dataIt(ev.until):'')
+        : DAYNAMES[(d.getDay()+6)%7]+' '+dataIt(ev.date);
+      const nOpt=NOTIFY_OPTS.find(([v])=>v===(ev.notify==null?'':String(ev.notify)));
+      const doc=(ev.countTeacher&&p&&p.teacherId&&personById(p.teacherId))?personById(p.teacherId).name:null;
+      modalBg.innerHTML='<div class="modal"><h3><span class="dot" style="background:'+(p?p.color:'#7c7c7c')+';display:inline-block;vertical-align:1px;margin-right:8px"></span>'+esc(p?p.name:'Attività')+'</h3>'
+        +'<div class="mbody">'
+        +riga('Quando', quando)
+        +riga('Orario', ev.start+' – '+ev.end+' <span class="muted">('+fmtHM(Math.max(0,(t2m(ev.end)??0)-(t2m(ev.start)??0)))+')</span>')
+        +(nOpt&&nOpt[0]!==''?riga('Promemoria', nOpt[1]):'')
+        +(doc?riga('Contata anche per', esc(doc)):'')
+        +(ev.note?riga('Nota', esc(ev.note)):'')
+        +'</div><div class="mfoot"><button class="btn ghost" id="evClose">Chiudi</button><span class="spacer"></span><button class="btn" id="evEdit">Modifica</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('evClose').onclick=closeModal;
+      document.getElementById('evEdit').onclick=()=>openEventModal({ev});
+    }
     function openEventModal(opts){
       const ev=opts.ev||null;
       const dISO=ev?ev.date:opts.dISO;
@@ -4120,28 +4144,41 @@ import * as repo from './js/repo.js';
     /* ---------- Impostazioni ---------- */
     const SD_=['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
     const IDX_=[1,2,3,4,5,6]; /* lun-sab: niente domenica */
+    const openPer={pres:null,study:null};   /* variazione aperta per tipo */
     function periodsEditorHTML(kind){
       const list = kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
       const tbtn=(pi,wd,quale,val)=>'<button class="scht-btn tinput '+(val?'':'is-empty')+'" data-scht data-k="'+kind+'" data-pi="'+pi+'" data-'+quale+'="'+wd+'" data-val="'+(val||'')+'">'+(val||'––:––')+'</button>';
+      const dataIt=f=>{if(!f)return '';const d=parseISO(f);return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+String(d.getFullYear()).slice(2);};
       const blocks = list.map((p,pi)=>{
-        const rows=IDX_.map((wd,i)=>{const sl=(p.slots&&p.slots[wd])||{};return '<div class="schrow">'
-            +'<span class="schd">'+SD_[i].slice(0,3)+'</span>'
-            +'<span class="schoro" data-oro="'+kind+'-'+pi+'-'+wd+'">'+((p.schedule[wd]||0)>0?fmtHM(p.schedule[wd]):'—')+'</span>'
-            +tbtn(pi,wd,'s',sl.start||'')
-            +tbtn(pi,wd,'e',sl.end||'')
-            +'<input class="schpzin" type="number" min="0" step="5" data-k="'+kind+'" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0">'
-          +'</div>';}).join('');
+        const aperto=openPer[kind]===pi;
         const sum=Object.values(p.schedule).reduce((a,b)=>a+(+b||0),0);
-        return '<div class="period">'
-          +'<div class="period-head">'
-            +'<div class="field"><label>'+(pi===0?'Valido dall’inizio (settimana del)':'Valido dalla settimana del')+'</label>'
-              +'<input type="date" data-k="'+kind+'" data-pi="'+pi+'" data-from value="'+p.from+'"></div>'
+        /* intestazione chiusa: solo validita' e totale, come i giorni in Timbrature */
+        let h='<div class="period'+(aperto?' period--open':'')+'">'
+          +'<div class="period-tap" data-per-toggle="'+kind+'" data-pi="'+pi+'">'
+            +'<span class="period-lbl">'+(pi===0?'Dall’inizio':'Dal '+dataIt(p.from))+'</span>'
             +'<span class="period-sum" data-sumfor="'+kind+'-'+pi+'">'+fmtHM(sum)+'/sett.</span>'
-            +(pi>0?'<button class="linkbtn del" data-k="'+kind+'" data-pi="'+pi+'" data-removeperiod>Rimuovi periodo</button>':'<span class="period-base">periodo iniziale</span>')
-          +'</div>'
-          +'<div class="schhead"><span></span><span>ore</span><span>inizio</span><span>fine</span><span>pausa</span></div>'
-          +'<div class="schlist">'+rows+'</div>'
-        +'</div>';
+            +'<span class="per-chev">'+(aperto?'▾':'▸')+'</span>'
+          +'</div>';
+        if(aperto){
+          const rows=IDX_.map((wd,i)=>{const sl=(p.slots&&p.slots[wd])||{};return '<div class="schrow">'
+              +'<span class="schd">'+SD_[i].slice(0,3)+'</span>'
+              +'<span class="schoro" data-oro="'+kind+'-'+pi+'-'+wd+'">'+((p.schedule[wd]||0)>0?fmtHM(p.schedule[wd]):'—')+'</span>'
+              +tbtn(pi,wd,'s',sl.start||'')
+              +tbtn(pi,wd,'e',sl.end||'')
+              +'<input class="schpzin" type="number" min="0" step="5" data-k="'+kind+'" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0">'
+            +'</div>';}).join('');
+          h+='<div class="period-body">'
+            +'<div class="field" style="margin:2px 0 10px"><label>'+(pi===0?'Valido dall’inizio (settimana del)':'Valido dalla settimana del')+'</label>'
+              +'<input type="date" data-k="'+kind+'" data-pi="'+pi+'" data-from value="'+p.from+'"></div>'
+            +'<div class="schhead"><span></span><span>ore</span><span>inizio</span><span>fine</span><span>pausa</span></div>'
+            +'<div class="schlist">'+rows+'</div>'
+            +'<div class="setrow" style="margin:12px 0 0;gap:8px">'
+              +'<button class="btn ghost dsm" data-dupperiod data-k="'+kind+'" data-pi="'+pi+'">Duplica settimana</button>'
+              +(pi>0?'<button class="linkbtn del" data-k="'+kind+'" data-pi="'+pi+'" data-removeperiod>Rimuovi</button>':'')
+            +'</div>'
+          +'</div>';
+        }
+        return h+'</div>';
       }).join('');
       return blocks
         +'<div class="setrow" style="margin:14px 0 0;gap:10px">'
@@ -4360,19 +4397,38 @@ import * as repo from './js/repo.js';
       };
       const bca=document.getElementById('btnChiudiAnno'); if(bca)bca.onclick=chiudiAnno;
       caricaArchivio();
+      view.querySelectorAll('[data-per-toggle]').forEach(t=>t.onclick=()=>{
+        const kind=t.dataset.perToggle, pi=+t.dataset.pi;
+        commitPeriods(kind);
+        openPer[kind]=openPer[kind]===pi?null:pi;
+        renderImpostazioni();
+      });
       view.querySelectorAll('.addperiod').forEach(b=>b.onclick=()=>{
         commitSettings();
         const kind=b.dataset.k, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
         const last=list[list.length-1];
-        const from=iso(mondayOf(new Date()));
-        list.push({from, schedule:{...last.schedule}, slots:JSON.parse(JSON.stringify(last.slots||{}))});
+        const nuovo={from:iso(mondayOf(new Date())), schedule:{...last.schedule}, slots:JSON.parse(JSON.stringify(last.slots||{}))};
+        list.push(nuovo);
         list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
+        openPer[kind]=list.indexOf(nuovo);
         savePeriods(kind); renderImpostazioni();
+      });
+      view.querySelectorAll('[data-dupperiod]').forEach(b=>b.onclick=()=>{
+        const kind=b.dataset.k, pi=+b.dataset.pi, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+        commitPeriods(kind);
+        const src=list[pi];
+        const nuovo={from:iso(mondayOf(new Date())), schedule:{...src.schedule}, slots:JSON.parse(JSON.stringify(src.slots||{}))};
+        list.push(nuovo);
+        list.sort((a,b)=>a.from<b.from?-1:(a.from>b.from?1:0));
+        openPer[kind]=list.indexOf(nuovo);
+        savePeriods(kind); renderImpostazioni();
+        toast('Settimana duplicata: imposta la data di validità');
       });
       view.querySelectorAll('[data-removeperiod]').forEach(b=>b.onclick=()=>{
         commitSettings();
         const kind=b.dataset.k, pi=+b.dataset.pi, list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
         if(pi>0)list.splice(pi,1);
+        openPer[kind]=null;
         savePeriods(kind); refreshChip(); renderImpostazioni();
       });
       view.querySelectorAll('.unit-sel').forEach(s=>s.onchange=()=>{commitSettings();renderImpostazioni();});
