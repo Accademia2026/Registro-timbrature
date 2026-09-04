@@ -3223,67 +3223,83 @@ import * as repo from './js/repo.js';
     }
 
     /* ---------- Riepilogo ---------- */
+    /* etichette di una settimana: cosa e' successo, a colpo d'occhio */
+    function etichetteSettimana(mon){
+      const tags=[], m=parseISO(mon);
+      const owk=obligationForWeek(mon), tot=weekTotal(mon), c=tot-owk;
+      if(c>0)tags.push(['pos','Eccedenza '+fmtHM(c,true)]);
+      else if(c<0)tags.push(['neg','Sotto soglia '+fmtHM(c,true)]);
+      else tags.push(['ok','In pari']);
+      const aut=authForWeek(mon);
+      if(aut>0)tags.push(['pos','Straordinario aut. '+fmtHM(aut)]);
+      else if(c>0&&DB.authorized[mon]===0)tags.push(['mut','Eccedenza non autorizzata']);
+      const conta={}; let rimossi=0;
+      for(let i=0;i<7;i++){
+        const k=iso(addDays(m,i)), e=DB.entries[k];
+        if(isSkipped(k)){rimossi++;continue;}
+        if(!e||!e.act||e.act==='presenza'||!ACTBY[e.act])continue;
+        const q=conta[e.act]||(conta[e.act]={n:0,min:0}); q.n++; q.min+=(+e.ph||0);
+      }
+      Object.entries(conta).forEach(([id,q])=>{
+        const a=ACTBY[id], beh=a.beh;
+        const cls=beh==='day'?'fer':(beh==='special'?'neg':(beh==='hour'?'tint':'mut'));
+        const quanto=beh==='hour'?(q.min?' '+fmtHM(q.min):(q.n>1?' \u00d7'+q.n:''))
+                    :(beh==='work'?(q.n>1?' \u00d7'+q.n:''):' '+q.n+' '+(q.n===1?'giorno':'giorni'));
+        tags.push([cls,a.label+quanto]);
+      });
+      if(rimossi)tags.push(['mut',rimossi+' '+(rimossi===1?'giorno rimosso':'giorni rimossi')]);
+      const st=weekStudy(mon); if(st>0)tags.push(['stud','Studio '+fmtHM(st)]);
+      return tags;
+    }
+    function rangeSettimana(mon){
+      const a=parseISO(mon), b=addDays(a,6);
+      return a.getMonth()===b.getMonth()
+        ? a.getDate()+'\u2013'+b.getDate()+' '+MONTHS[b.getMonth()].slice(0,3)
+        : a.getDate()+' '+MONTHS[a.getMonth()].slice(0,3)+' \u2013 '+b.getDate()+' '+MONTHS[b.getMonth()].slice(0,3);
+    }
+    function settimanaHTML(mon){
+      const owk=obligationForWeek(mon), tot=weekTotal(mon), cc=tot-owk;
+      const pct=Math.min(100,owk?(Math.min(tot,owk)/owk)*100:0);
+      const overPct=tot>owk&&owk?Math.min(40,((tot-owk)/owk)*100):0;
+      const goalLeft=owk?Math.min(100,(owk/Math.max(tot,owk))*100):100;
+      const fcls=cc>0?'meter__fill--pos':(cc<0?'meter__fill--neg':'');
+      const vcls=cc<0?'neg':(cc>0?'pos':'muted'), vtxt=cc===0?'in pari':fmtHM(cc,true);
+      const tags=etichetteSettimana(mon).map(([cls,t])=>'<span class="wtag wtag--'+cls+'">'+esc(t)+'</span>').join('');
+      return '<div class="weekrow"><span class="weekrow__k">'+rangeSettimana(mon)+'<small>'+fmtHM(tot)+' su '+fmtHM(owk)+'</small></span>'
+        +'<span class="meter"><span class="meter__fill '+fcls+'" style="width:'+Math.min(100,pct+overPct)+'%"></span><span class="meter__goal" style="left:'+goalLeft+'%"></span></span>'
+        +'<span class="weekrow__v '+vcls+'">'+vtxt+'</span></div>'
+        +'<div class="wtags">'+tags+'<button class="wtag wtag--link" data-openweek="'+mon+'">Apri \u203a</button></div>';
+    }
     function renderRiepilogo(){
       const bal=runningBalance();
       const wks=weeksWithData();
-      let ok=0,over=0,under=0;
-      wks.forEach(m=>{const c=weekTotal(m)-obligationForWeek(m); if(c>0)over++;else if(c<0)under++;else ok++;});
-      const ferie=DB.entitlements.find(e=>e.id==='ferie');
+      let over=0,under=0;
+      wks.forEach(m=>{const c=weekTotal(m)-obligationForWeek(m); if(c>0)over++;else if(c<0)under++;});
       const fAlloc=ferieAlloc();
       const ferieRes=fAlloc.prevRes+fAlloc.curRes;
-
-      const recent=wks.slice(-10);
+      const ferieTot=DB.entitlements.filter(e=>e.id==='ferie'||e.id==='ferie_prec').reduce((a,e)=>a+(+e.total||0),0);
+      const malattia=Object.values(DB.entries).filter(e=>e&&e.act==='malattia').length;
       const obl=obligation();
-      let bars=recent.map(m=>{
-        const owk=obligationForWeek(m), tot=weekTotal(m), c=tot-owk;
-        const md=parseISO(m);
-        const wkLabel=md.getDate()+' '+MONTHS[md.getMonth()].slice(0,3);
-        const pct=Math.min(100, owk? (Math.min(tot,owk)/owk)*100 :0);
-        const overPct=tot>owk&&owk? Math.min(40,((tot-owk)/owk)*100):0;
-        const goalLeft=owk?Math.min(100,(owk/Math.max(tot,owk))*100):100;
-        return '<div class="barrow">'
-           +'<span class="wk">'+wkLabel+'</span>'
-           +'<div class="track">'
-             +'<div class="fill '+(c>0?'over':'')+'" style="width:'+Math.min(100,pct+overPct)+'%"></div>'
-             +'<div class="goal" style="left:'+goalLeft+'%"></div>'
-           +'</div>'
-           +'<span class="res '+(c<0?'neg':(c>0?'pos':''))+'">'+fmtHM(c,true)+'</span>'
-         +'</div>';
-      }).join('');
-      if(!recent.length) bars='<p class="hint">Nessuna settimana registrata. Vai su <b>Registro</b> per iniziare.</p>';
 
       const now=new Date(), tkey=iso(now), te=DB.entries[tkey]||{};
       const slot=nextPunch(te);
       const todayStr=DAYNAMES[(now.getDay()+6)%7]+' '+now.getDate()+' '+MONTHS[now.getMonth()]+' '+now.getFullYear();
-      const done=PUNCH.filter(([f])=>te[f]).map(([f,l])=>l+' <b class="mono">'+te[f]+'</b>');
       const clockTxt=pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
-      const recent5=wks.slice().reverse();   /* tutte le settimane, piu recente in alto */
-      let weekrows=recent5.map(m=>{
-        const owk=obligationForWeek(m),tot=weekTotal(m),cc=tot-owk;
-        const md=parseISO(m), lbl=md.getDate()+' '+MONTHS[md.getMonth()].slice(0,3);
-        const pct=Math.min(100,owk?(Math.min(tot,owk)/owk)*100:0);
-        const overPct=tot>owk&&owk?Math.min(40,((tot-owk)/owk)*100):0;
-        const goalLeft=owk?Math.min(100,(owk/Math.max(tot,owk))*100):100;
-        const fcls=cc>0?'meter__fill--pos':(cc<0?'meter__fill--neg':'');
-        const vcls=cc<0?'neg':(cc>0?'pos':'muted'), vtxt=cc===0?'in pari':fmtHM(cc,true);
-        return '<div class="weekrow"><span class="weekrow__k">'+lbl+'</span>'
-          +'<span class="meter"><span class="meter__fill '+fcls+'" style="width:'+Math.min(100,pct+overPct)+'%"></span><span class="meter__goal" style="left:'+goalLeft+'%"></span></span>'
-          +'<span class="weekrow__v '+vcls+'">'+vtxt+'</span></div>';
-      }).join('');
-      if(!recent5.length)weekrows='<div class="row"><span class="row__label muted">Nessuna settimana registrata. Vai su Timbrature per iniziare.</span></div>';
       const doneTxt=PUNCH.filter(([f])=>te[f]).map(([f,l])=>l+' '+te[f]).join(' \u00b7 ');
+
+      /* settimane: l'ultima in evidenza, le altre a tendina */
+      const ultima=wks.length?wks[wks.length-1]:null;
+      const altre=wks.slice(0,-1).reverse();
+      const opzioni=altre.map(m=>'<option value="'+m+'">'+rangeSettimana(m)+'</option>').join('');
+      const settimane=!ultima
+        ? '<div class="row"><span class="row__label muted">Nessuna settimana registrata. Vai su Timbrature per iniziare.</span></div>'
+        : settimanaHTML(ultima)
+          +(altre.length?'<div class="wkpick"><select id="wkPick" class="act-sel" style="max-width:none"><option value="">Altre settimane\u2026 ('+altre.length+')</option>'+opzioni+'</select></div><div id="wkPickOut"></div>':'');
 
       view.innerHTML=
         '<div class="ios">'
         +'<div class="hero-title" style="display:block"><h1 class="large-title">Riepilogo</h1><p>'+(DB.yearLabel?('Anno accademico '+DB.yearLabel):'Registro presenze')+'</p></div>'
         +'<div class="stack">'
-          +'<div><div class="group-header">Saldo ore complessivo</div><div class="card">'
-            +'<div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px">'
-              +'<div class="num '+(bal<0?'neg':'pos')+'" style="font-size:var(--t-hero);font-weight:600;line-height:.92">'+fmtHM(bal,true)+'</div>'
-              +'<span class="badge '+(bal<0?'badge--neg':'badge--pos')+'">'+(bal<0?'Debito':'Credito')+'</span>'
-            +'</div>'
-            +'<p class="foot muted" style="margin-top:12px">'+(bal>=0?('In pari o in credito sull\u2019obbligo di '+fmtHM(obl)+'/settimana.'):('Ore da recuperare sull\u2019obbligo di '+fmtHM(obl)+'/settimana.'))+'</p>'
-          +'</div></div>'
           +'<div><div class="group-header">Timbra adesso</div><div class="card">'
             +'<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">'
               +'<div><div class="num" id="liveClock" style="font-size:var(--t-title1);font-weight:600">'+clockTxt+'</div>'
@@ -3292,18 +3308,29 @@ import * as repo from './js/repo.js';
             +'</div>'
           +'</div></div>'
           +'<div><div class="group-header">Andamento</div><div class="group">'
-            +'<div class="row"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+'</span></div>'
-            +'<div class="row"><span class="row__label">Settimane in eccedenza</span><span class="row__value pos">'+over+'</span></div>'
+            +'<div class="row" style="align-items:flex-end;padding-top:14px;padding-bottom:12px"><div><div class="foot muted">Saldo ore complessivo</div>'
+              +'<div class="num '+(bal<0?'neg':'pos')+'" style="font-size:var(--t-large);font-weight:600;line-height:1">'+fmtHM(bal,true)+'</div></div>'
+              +'<span class="badge '+(bal<0?'badge--neg':'badge--pos')+'">'+(bal<0?'Debito':'Credito')+'</span></div>'
+            +'<div class="row"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+(wks.length?' <small class="muted">\u00b7 '+over+' in eccedenza \u00b7 '+under+' sotto</small>':'')+'</span></div>'
             +'<div class="row"><span class="row__label">Straordinario autorizzato</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+authForWeek(m),0))+'</span></div>'
-            +'<div class="row"><span class="row__label">Ore di studio (a parte)</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekStudy(m),0))+'</span></div>'
-            +'<div class="row"><span class="row__label">Giorni di ferie residui</span><span class="row__value">'+ferieRes+'</span></div>'
-            +'<div class="row"><span class="row__label">Omesse timbrature</span><span class="row__value">'+omessaCount()+'</span></div>'
+            +'<div class="row"><span class="row__label">Ore di studio</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekStudy(m),0))+'</span></div>'
+            +'<div class="row"><span class="row__label">Ferie residue</span><span class="row__value">'+ferieRes+' <small class="muted">su '+ferieTot+' gg</small></span></div>'
+            +'<div class="row"><span class="row__label">Malattia</span><span class="row__value">'+malattia+' <small class="muted">gg</small></span></div>'
+            +'<div class="row"><span class="row__label">Omesse timbrature</span><span class="row__value '+(omessaCount()?'neg':'')+'">'+omessaCount()+'</span></div>'
+            +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza e straordinario autorizzato; lo studio resta a parte.</p>'
           +'</div></div>'
-          +'<div><div class="group-header">Settimane \u00b7 obbligo '+fmtHM(obl)+'</div><div class="group" style="max-height:330px;overflow-y:auto">'+weekrows+'</div>'
-            +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Scorri per la storia completa.</p></div>'
+          +'<div><div class="group-header">'+(ultima?'Ultima settimana':'Settimane')+'</div><div class="group">'+settimane+'</div>'
+            +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Le etichette raccontano cosa \u00e8 successo.</p></div>'
         +'</div>'
         +'</div>';
 
+      const pick=document.getElementById('wkPick');
+      if(pick)pick.onchange=()=>{
+        const out=document.getElementById('wkPickOut');
+        out.innerHTML=pick.value?settimanaHTML(pick.value):'';
+        out.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
+      };
+      view.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
       const btn=document.getElementById('btnTimbra');
       if(btn) btn.onclick=doTimbra;
       clearInterval(clockTimer);
