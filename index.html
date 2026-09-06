@@ -4546,12 +4546,11 @@ import * as repo from './js/repo.js';
       const note=[
         '• Presenza ordinaria '+fmtHM(v.pres)+' + studio '+fmtHM(v.stud)+(v.oltre?' + Masterclass oltre il tetto '+fmtHM(v.oltre):'')+' = '+fmtHM(v.tot)+' (obbligo settimanale 36 ore).',
       ];
-      if(haMC) note.push('• Masterclass (funzioni aggiuntive, retribuite come straordinario da contratto d’istituto): '+fmtHM(v.mc)+' settimanali'+(v.oltre?', di cui '+fmtHM(v.oltre)+' oltre il tetto delle 9 ore di straordinario, che riducono di pari misura la presenza ordinaria':'')+'.');
+      if(haMC) note.push('• Masterclass (funzioni aggiuntive): '+fmtHM(v.mc)+' settimanali'+(v.oltre?', di cui '+fmtHM(v.oltre)+' oltre il tetto delle 9 ore di straordinario, che riducono di pari misura la presenza ordinaria':'')+'.');
       if(haMC) note.push('• Totale complessivo: '+fmtHM(v.totAll)+' settimanali (limite 45 ore).');
       note.forEach(t=>{const r=doc.splitTextToSize(t, W-2*M); doc.text(r, M, y); y+=r.length*5+1.5;});
       y+=10;
       doc.text('Bari, '+pad(oggi.getDate())+'/'+pad(oggi.getMonth()+1)+'/'+oggi.getFullYear(), M, y);
-      doc.text('Firma', W-M-60, y); doc.setDrawColor(120); doc.line(W-M-48, y+1, W-M, y+1);
       doc.setFontSize(8); doc.setTextColor(130);
       doc.text('Generato con Registro presenze · '+nome, M, doc.internal.pageSize.getHeight()-12);
       const nomeFile='orario-servizio-'+(p.from?('dal-'+p.from):'inizio-anno')+'.pdf';
