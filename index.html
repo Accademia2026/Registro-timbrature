@@ -4543,7 +4543,7 @@ import * as repo from './js/repo.js';
       /* solo le fasce presenti: niente righe di riempimento */
       if(!g.pn&&!g.sn&&!g.mn)return '<span class="hint2">riposo</span>';
       let h=g.pn?'<div><i class="kl2 p"></i>'+g.a.start+'–'+g.a.end+(g.a.pausa?' <span class="hint2">pausa '+g.a.pausa+'</span>':'')+'</div>':'';
-      if(g.sn)h+='<div class="s2"><i class="kl2 s"></i>'+g.b.start+'–'+g.b.end+'</div>';
+      if(g.sn)h+='<div class="s2"><i class="kl2 s"></i>'+g.b.start+'–'+g.b.end+(g.b.pausa?' <span class="hint2">pausa '+g.b.pausa+'</span>':'')+'</div>';
       if(g.mn)h+='<div class="s2"><i class="kl2 m"></i>'+g.m.start+'–'+g.m.end+'</div>';
       return h;
     }
@@ -4595,7 +4595,8 @@ import * as repo from './js/repo.js';
                 +'<div class="pills2">'+tbtn('pres',pi,wd,'s',sl.start||'')+'<span class="arr2">→</span>'+tbtn('pres',pi,wd,'e',sl.end||'')
                   +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="pres" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0"></div>'
                 +'<div class="lab2"><i class="kl2 s"></i>Studio</div>'
-                +'<div class="pills2">'+tbtn('study',pi,wd,'s',ss.start||'')+'<span class="arr2">→</span>'+tbtn('study',pi,wd,'e',ss.end||'')+'</div>'
+                +'<div class="pills2">'+tbtn('study',pi,wd,'s',ss.start||'')+'<span class="arr2">→</span>'+tbtn('study',pi,wd,'e',ss.end||'')
+                  +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="study" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(ss.pausa||'')+'" placeholder="0"></div>'
                 +'<div class="lab2"><i class="kl2 m"></i>Masterclass <span class="hint2">pagate a parte</span></div>'
                 +'<div class="pills2">'+tbtn('mc',pi,wd,'s',sl.mcs||'')+'<span class="arr2">→</span>'+tbtn('mc',pi,wd,'e',sl.mce||'')+'</div>'
                 +'<div class="hint2" data-dayhint="'+pi+'-'+wd+'">'+hintGiorno(pi,wd)+'</div>'
