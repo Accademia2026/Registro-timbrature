@@ -3316,7 +3316,6 @@ import * as repo from './js/repo.js';
         tags.push([cls,a.label+quanto]);
       });
       if(rimossi)tags.push(['mut',rimossi+' '+(rimossi===1?'giorno rimosso':'giorni rimossi')]);
-      const st=weekStudy(mon); if(st>0)tags.push(['stud','Studio '+fmtHM(st)]);
       return tags;
     }
     function rangeSettimana(mon){
@@ -3365,7 +3364,6 @@ import * as repo from './js/repo.js';
       else if(key==='pagato'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.pagate>0)righe.push(riga(mon, fmtHM(wi.pagate)));}); }
       else if(key==='comp'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.comp>0)righe.push(riga(mon, fmtHM(wi.comp)));}); }
       else if(key==='mc'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.mcTot>0)righe.push(riga(mon, fmtHM(wi.mc)+(wi.mcScartati>0?' <small class="muted">+'+fmtHM(wi.mcScartati)+' non aut.</small>':'')+(wi.mcDomanda?' <small class="neg">da decidere</small>':'')));}); }
-      else if(key==='studio'){ wks.forEach(mon=>{const st=weekStudy(mon); if(st>0)righe.push(riga(mon, fmtHM(st)));}); }
       else if(key==='ferie') elenco('ferie','gg');
       else if(key==='malattia') elenco('malattia','gg');
       else if(key==='omessa') elenco('omessa','gg');
@@ -3417,7 +3415,6 @@ import * as repo from './js/repo.js';
             +'<div class="row row--tap" data-dett="pagato"><span class="row__label">Straordinario pagato</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+pagateForWeek(m),0))+'</span></div>'
             +'<div class="row row--tap" data-dett="comp"><span class="row__label">Riposo compensativo <small class="muted">dal saldo</small></span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekComp(m),0))+'</span></div>'
             +'<div class="row row--tap" data-dett="mc"><span class="row__label">Masterclass <small class="muted">pagate</small></span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).mc,0))+'</span></div>'
-            +'<div class="row row--tap" data-dett="studio"><span class="row__label">Ore di studio</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekStudy(m),0))+'</span></div>'
             +'<div class="row row--tap" data-dett="ferie"><span class="row__label">Ferie residue</span><span class="row__value">'+ferieRes+' <small class="muted">su '+ferieTot+' gg</small></span></div>'
             +'<div class="row row--tap" data-dett="malattia"><span class="row__label">Malattia</span><span class="row__value">'+malattia+' <small class="muted">gg</small></span></div>'
             +'<div class="row row--tap" data-dett="omessa"><span class="row__label">Omesse timbrature</span><span class="row__value '+(omessaCount()?'neg':'')+'">'+omessaCount()+'</span></div>'
