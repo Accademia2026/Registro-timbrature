@@ -370,3 +370,14 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 .authrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .authrow>span:first-child{flex:1;min-width:120px}
 .phfield .kl2{margin-right:4px}
+
+/* ---------- Riepilogo: dettaglio delle voci dell'Andamento --------------- */
+.ios .row--tap{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.ios .row--tap .row__value::after{content:"\203A";display:inline-block;margin-left:8px;color:var(--ink-soft);opacity:.6;transition:transform .15s}
+.ios .row--tap.row--open .row__value::after{transform:rotate(90deg)}
+.ios .row--tap[data-dett="saldo"] .row__value::after{content:none}
+.ios .dett-out{background:var(--velo);border-top:1px solid var(--ctm-linea-soft);border-bottom:1px solid var(--ctm-linea-soft)}
+.ios .dett-out .dett-row{padding-left:28px;gap:10px;min-height:40px;font-size:13px}
+.ios .dett-out .dett-row .row__label{flex:1}
+.ios .dett-out .dett-row .row__value{font-size:13px}
+.ios .dett-out .dett-row .wtag--link{margin-left:0;flex:none}
