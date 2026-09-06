@@ -4771,13 +4771,23 @@ import * as repo from './js/repo.js';
       const m=Math.abs(parseInt(document.getElementById('setBalM').value,10)||0);
       DB.initialBalanceMin=sign*(h*60+Math.min(59,m));
     }
-    function renderImpostazioni(){
-      const rows=DB.entitlements.map(e=>'<div class="entrow">'
+    /* limiti permessi: un menu a tendina sceglie la voce, si vedono solo i suoi campi */
+    let entSel=null;
+    function entRowHTML(e){
+      return '<div class="entrow">'
          +'<span class="entname">'+esc(e.label)+'</span>'
          +'<select class="unit-sel" data-ent="'+e.id+'" data-f="unit"><option value="GG" '+(e.unit==='GG'?'selected':'')+'>giorni</option><option value="ORE" '+(e.unit==='ORE'?'selected':'')+'>ore</option></select>'
          +'<label class="entfield"><span>diritto</span><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="total" value="'+e.total+'"></label>'
          +'<label class="entfield"><span>già fruito</span><input type="number" min="0" step="'+(e.unit==='ORE'?'0.5':'1')+'" data-ent="'+e.id+'" data-f="used0" value="'+e.used0+'"></label>'
-       +'</div>').join('');
+       +'</div>';
+    }
+    function renderImpostazioni(){
+      if(!DB.entitlements.some(e=>e.id===entSel)) entSel=DB.entitlements[0]?DB.entitlements[0].id:null;
+      const entCur=DB.entitlements.find(e=>e.id===entSel);
+      const rows='<select class="act-sel" id="entPick" style="max-width:none;margin:8px 0 4px">'
+          +DB.entitlements.map(e=>'<option value="'+e.id+'" '+(e.id===entSel?'selected':'')+'>'+esc(e.label)+' · '+e.total+' '+(e.unit==='ORE'?'ore':'gg')+'</option>').join('')
+        +'</select>'
+        +'<div id="entRowOut">'+(entCur?entRowHTML(entCur):'')+'</div>';
       const bm=DB.initialBalanceMin||0, bSign=bm<0?-1:1, bH=Math.floor(Math.abs(bm)/60), bM=Math.abs(bm)%60;
       const chiusBal=runningBalance(), chiusFA=ferieAlloc(), chiusFerie=chiusFA.prevRes+chiusFA.curRes;
       let chiusSugg='';
@@ -4862,6 +4872,13 @@ import * as repo from './js/repo.js';
         openWd=(openWd===wd?null:wd);
         renderImpostazioni();
       });
+      const ep=document.getElementById('entPick'); if(ep)ep.onchange=()=>{
+        /* le modifiche alla voce corrente restano in memoria; "Salva permessi" le scrive */
+        commitEnts(); entSel=ep.value;
+        const e=DB.entitlements.find(x=>x.id===entSel);
+        document.getElementById('entRowOut').innerHTML=e?entRowHTML(e):'';
+        ep.querySelectorAll('option').forEach(o=>{const x=DB.entitlements.find(y=>y.id===o.value); if(x)o.textContent=x.label+' · '+x.total+' '+(x.unit==='ORE'?'ore':'gg');});
+      };
       const sp=document.getElementById('savePerm'); if(sp)sp.onclick=()=>{
         commitEnts(); repo.saveDiritti(DB.entitlements);
         refreshChip(); renderImpostazioni(); toast('Permessi salvati');
