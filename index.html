@@ -4610,7 +4610,6 @@ import * as repo from './js/repo.js';
             +'<div class="orario-list">'+righe+'</div>'
             +'<div class="orario-foot" data-foot="'+pi+'">'+piedeHTML(pi)+'</div>'
             +'<div class="setrow" style="margin:12px 0 0;gap:8px">'
-              +'<button class="btn" data-salvaorario="'+pi+'">Salva orario</button>'
               +'<button class="btn ghost dsm" data-dupperiod data-k="pres" data-pi="'+pi+'">Duplica</button>'
               +(pi>0?'<button class="linkbtn del" data-k="pres" data-pi="'+pi+'" data-removeperiod>Rimuovi</button>':'')
             +'</div>'
@@ -4618,7 +4617,7 @@ import * as repo from './js/repo.js';
         }
         return h+'</div>';
       }).join('');
-      return blocks+'<div class="setrow" style="margin:14px 0 0"><button class="btn ghost addperiod" data-k="pres">+ Variazione di orario</button></div>';
+      return blocks+'<div class="setrow" style="margin:14px 0 0;gap:8px"><button class="btn" data-salvaorario>Salva orario</button><button class="btn ghost addperiod" data-k="pres">+ Variazione di orario</button></div>';
     }
     function updateDay(kind,pi,wd){
       const two=view.querySelector('[data-two="'+pi+'-'+wd+'"]'); if(two)two.innerHTML=riassuntoGiorno(pi,wd);
