@@ -3619,7 +3619,6 @@ import * as repo from './js/repo.js';
       if(kpField&&kpField!==el)finalizeField();
       if(kpField)kpField.classList.remove('is-active');
       kpField=el; el.classList.add('is-active');
-      if(el.dataset.scht!=null) delete el.dataset.suggerito;   /* scelta esplicita dell'utente */
       kpBuf=(el.value||el.dataset.val||'').replace(/\D/g,'').slice(0,4);
       const w=document.getElementById('kpWhich');
       if(w){
@@ -4371,31 +4370,31 @@ import * as repo from './js/repo.js';
     }
     function riassuntoGiorno(pi,wd){
       const g=giornoInfo(pi,wd);
+      /* solo le fasce presenti: niente righe di riempimento */
       if(!g.pn&&!g.sn)return '<span class="hint2">riposo</span>';
-      let h=g.pn?'<div><i class="kl2 p"></i>'+g.a.start+'–'+g.a.end+(g.a.pausa?' <span class="hint2">pausa '+g.a.pausa+'</span>':'')+'</div>':'<div class="hint2">— nessuna presenza</div>';
-      h+=g.sn?'<div class="s2"><i class="kl2 s"></i>'+g.b.start+'–'+g.b.end+'</div>':'<div class="hint2">— nessuno studio</div>';
+      let h=g.pn?'<div><i class="kl2 p"></i>'+g.a.start+'–'+g.a.end+(g.a.pausa?' <span class="hint2">pausa '+g.a.pausa+'</span>':'')+'</div>':'';
+      if(g.sn)h+='<div class="s2"><i class="kl2 s"></i>'+g.b.start+'–'+g.b.end+'</div>';
       return h;
     }
     function totGiornoHTML(pi,wd){
       const g=giornoInfo(pi,wd);
       if(!g.tot)return '—';
-      const main=g.sn?fmtHM(g.pn)+' + '+fmtHM(g.sn):fmtHM(g.pn);
-      const sub=g.overlap?'sovrapposte':(g.tot>DAILY_CAP?'oltre le 9h':'= '+fmtHM(g.tot)+' su 9h');
-      return '<span'+(g.err?' class="err2"':'')+'>'+main+'</span><small'+(g.err?' class="err2"':'')+'>'+sub+'</small>';
+      const sub=g.overlap?'sovrapposte':(g.tot>DAILY_CAP?'oltre le 9h':'');
+      return '<span'+(g.err?' class="err2"':'')+'>'+fmtHM(g.tot)+'</span>'+(sub?'<small class="err2">'+sub+'</small>':'');
     }
     function hintGiorno(pi,wd){
+      /* si parla solo quando c'e' un problema */
       const g=giornoInfo(pi,wd);
-      if(g.overlap)return 'Le due fasce si sovrappongono: sposta lo studio dopo la presenza';
-      if(g.tot>DAILY_CAP)return 'Oltre il tetto di 9 ore al giorno';
-      return 'Totale giorno '+fmtHM(g.tot)+' su 9h · '+(DAILY_CAP-g.tot>0?'resta '+fmtHM(DAILY_CAP-g.tot)+' disponibile':'giornata piena');
+      if(g.overlap)return 'Presenza e studio si sovrappongono';
+      if(g.tot>DAILY_CAP)return 'Oltre le 9 ore al giorno';
+      return '';
     }
     function piedeHTML(pi){
-      const v=verificaPeriodo(pi), pct=x=>Math.min(100,x/ORE_SETT*100);
+      const v=verificaPeriodo(pi);
       return '<span><i class="kl2 p"></i>Presenza <b class="mono">'+fmtHM(v.pres)+'</b></span>'
         +'<span><i class="kl2 s"></i>Studio <b class="mono">'+fmtHM(v.stud)+'</b></span>'
         +'<span class="big2 mono'+(v.tot===ORE_SETT?'':' neg')+'">'+fmtHM(v.tot)+' / 36h</span>'
-        +'<div class="meter2"><i class="a" style="width:'+pct(v.pres)+'%"></i><i class="b" style="width:'+pct(v.stud)+'%"></i></div>'
-        +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'<div class="ok2">✓ 36 ore, nessuna sovrapposizione</div>');
+        +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'');
     }
     function orarioEditorHTML(){
       if(allineaPeriodi()){ savePeriods('pres'); savePeriods('study'); }
@@ -4423,7 +4422,7 @@ import * as repo from './js/repo.js';
                 +'<div class="lab2"><i class="kl2 p"></i>Presenza</div>'
                 +'<div class="pills2">'+tbtn('pres',pi,wd,'s',sl.start||'')+'<span class="arr2">→</span>'+tbtn('pres',pi,wd,'e',sl.end||'')
                   +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="pres" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0"></div>'
-                +'<div class="lab2"><i class="kl2 s"></i>Studio <span class="hint2" style="text-transform:none;letter-spacing:0">· si propone dopo la presenza</span></div>'
+                +'<div class="lab2"><i class="kl2 s"></i>Studio</div>'
                 +'<div class="pills2">'+tbtn('study',pi,wd,'s',ss.start||'')+'<span class="arr2">→</span>'+tbtn('study',pi,wd,'e',ss.end||'')+'</div>'
                 +'<div class="hint2" data-dayhint="'+pi+'-'+wd+'">'+hintGiorno(pi,wd)+'</div>'
               +'</div>';
@@ -4437,7 +4436,6 @@ import * as repo from './js/repo.js';
             +'<div class="orario-foot" data-foot="'+pi+'">'+piedeHTML(pi)+'</div>'
             +'<div class="setrow" style="margin:12px 0 0;gap:8px">'
               +'<button class="btn" data-salvaorario="'+pi+'">Salva orario</button>'
-              +'<button class="btn ghost dsm" data-completa36="'+pi+'">Completa a 36h</button>'
               +'<button class="btn ghost dsm" data-dupperiod data-k="pres" data-pi="'+pi+'">Duplica</button>'
               +(pi>0?'<button class="linkbtn del" data-k="pres" data-pi="'+pi+'" data-removeperiod>Rimuovi</button>':'')
             +'</div>'
@@ -4448,15 +4446,6 @@ import * as repo from './js/repo.js';
       return blocks+'<div class="setrow" style="margin:14px 0 0"><button class="btn ghost addperiod" data-k="pres">+ Variazione di orario</button></div>';
     }
     function updateDay(kind,pi,wd){
-      /* suggerimento: lo studio parte dove finisce la presenza */
-      if(kind==='pres'){
-        const a=slotDi('pres',pi,wd);
-        const bs=view.querySelector('[data-scht][data-k="study"][data-pi="'+pi+'"][data-s="'+wd+'"]');
-        /* segue la fine della presenza finche' l'utente non tocca lo studio */
-        if(bs&&(!bs.dataset.val||bs.dataset.suggerito==='1')&&t2m(a.end)!=null){
-          bs.dataset.val=a.end;bs.textContent=a.end;bs.classList.remove('is-empty');bs.dataset.suggerito='1';
-        }
-      }
       const two=view.querySelector('[data-two="'+pi+'-'+wd+'"]'); if(two)two.innerHTML=riassuntoGiorno(pi,wd);
       const t=view.querySelector('[data-tot2="'+pi+'-'+wd+'"]'); if(t)t.innerHTML=totGiornoHTML(pi,wd);
       const hnt=view.querySelector('[data-dayhint="'+pi+'-'+wd+'"]'); if(hnt)hnt.textContent=hintGiorno(pi,wd);
@@ -4464,28 +4453,6 @@ import * as repo from './js/repo.js';
       const foot=view.querySelector('[data-foot="'+pi+'"]'); if(foot)foot.innerHTML=piedeHTML(pi);
       const sum=view.querySelector('[data-sumfor="pres-'+pi+'"]');
       if(sum){const v=verificaPeriodo(pi); sum.textContent=fmtHM(v.tot)+' / 36h'; sum.classList.toggle('neg',v.tot!==ORE_SETT||v.errori.length>0);}
-    }
-    /* distribuisce le ore mancanti a 36 come studio dopo la presenza, entro le 9h/giorno */
-    function completaA36(pi){
-      const P=DB.schedulePeriods[pi], S=DB.studyPeriods[pi];
-      let v=verificaPeriodo(pi), resto=ORE_SETT-v.tot;
-      if(resto<=0)return false;
-      for(const wd of IDX_){
-        if(resto<=0)break;
-        const g=v.giorni[wd]; if(!g.pn)continue;
-        const spazio=DAILY_CAP-g.tot; if(spazio<=0)continue;
-        const agg=Math.min(resto,spazio);
-        S.slots[wd]=S.slots[wd]||{};
-        const inizio=g.sn?g.b.end:g.a.end;
-        const fine=addMin(inizio,agg);
-        if(t2m(fine)<=t2m(inizio))continue;
-        if(!g.sn)S.slots[wd].start=inizio;
-        S.slots[wd].end=fine;
-        resto-=agg;
-        v=verificaPeriodo(pi);
-      }
-      IDX_.forEach(wd=>{const sl=S.slots[wd]||{};S.schedule[wd]=nettoSlot(sl);});
-      return true;
     }
     function ordinaCoppie(){
       const P=DB.schedulePeriods, S=DB.studyPeriods;
@@ -4649,7 +4616,7 @@ import * as repo from './js/repo.js';
         +'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Orario di lavoro · 36 ore</h2>'
-        +'<p class="sec-d">Per ogni giorno la fascia in <b>presenza</b> (con pausa) e la fascia di <b>studio</b>: non possono sovrapporsi, insieme non superano le 9 ore al giorno e in settimana devono fare esattamente 36 ore, altrimenti l’orario non si salva. Tocca un giorno per compilarlo; «Completa a 36h» piazza da solo lo studio mancante dopo la presenza.</p>'
+        +'<p class="sec-d">Tocca un giorno e inserisci le fasce di <b>presenza</b> e di <b>studio</b>. In settimana devono fare 36 ore, senza sovrapporsi e senza superare le 9 ore al giorno.</p>'
         +'<div class="card" style="padding:14px 18px">'+orarioEditorHTML()+'</div>'
         +'<div class="divider"></div>'
         +'<h2 class="sec-h">Limiti permessi</h2>'
@@ -4703,14 +4670,6 @@ import * as repo from './js/repo.js';
         if(errori.length){ toast('Non salvato — '+errori[0]); renderImpostazioni(); return; }
         savePeriods('pres'); savePeriods('study');
         refreshChip(); renderImpostazioni(); toast('Orario salvato: 36 ore, tutto in regola');
-      });
-      view.querySelectorAll('[data-completa36]').forEach(b=>b.onclick=()=>{
-        const obj=DB.schedulePeriods[+b.dataset.completa36];
-        commitOrario();
-        const idx=DB.schedulePeriods.indexOf(obj);
-        const fatto=idx>=0&&completaA36(idx);
-        renderImpostazioni();
-        toast(fatto?'Studio distribuito dopo la presenza: controlla e salva':'Niente da completare: le 36 ore ci sono già');
       });
       view.querySelectorAll('[data-day-toggle]').forEach(r=>r.onclick=ev=>{
         if(ev.target.closest('button,input'))return;

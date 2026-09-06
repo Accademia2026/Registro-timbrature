@@ -214,6 +214,10 @@ select:focus,input:focus,textarea:focus,
 .tot2 small{display:block;font-family:"Inter",system-ui,sans-serif;font-size:9px;color:var(--ink-soft);font-weight:400}
 .err2{color:var(--rosso)!important}
 .hint2{font-size:11px;color:var(--ink-soft)}
+.hint2[data-dayhint]{color:var(--rosso);font-weight:600}
+.hint2[data-dayhint]:empty{display:none}
+.drow2{min-height:46px}
+.tot2{font-size:15px}
 .dopen2{background:var(--velo);border-top:1px solid var(--ctm-linea-soft);padding:10px 12px 12px;display:flex;flex-direction:column;gap:8px}
 .lab2{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);display:flex;align-items:center;gap:6px}
 .pills2{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
