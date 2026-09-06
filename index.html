@@ -4479,6 +4479,94 @@ import * as repo from './js/repo.js';
     /* ---------- Impostazioni ---------- */
     const SD_=['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
     const IDX_=[1,2,3,4,5,6]; /* lun-sab: niente domenica */
+
+    /* ---------- PDF dell'orario per la segreteria (jsPDF caricata al bisogno) ---------- */
+    const JSPDF_SRC=['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+                     'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'];
+    let jspdfPromise=null;
+    function caricaScript(src){
+      return new Promise((ok,ko)=>{
+        if(document.querySelector('script[src="'+src+'"]')){ok();return;}
+        const s=document.createElement('script'); s.src=src; s.onload=()=>ok(); s.onerror=()=>ko(new Error(src)); document.head.appendChild(s);
+      });
+    }
+    function caricaJsPDF(){
+      if(window.jspdf&&window.jspdf.jsPDF&&window.jspdf.jsPDF.API.autoTable)return Promise.resolve();
+      if(!jspdfPromise) jspdfPromise=caricaScript(JSPDF_SRC[0]).then(()=>caricaScript(JSPDF_SRC[1])).catch(e=>{jspdfPromise=null;throw e;});
+      return jspdfPromise;
+    }
+    function dataItFull(iso_){const d=parseISO(iso_);return pad(d.getDate())+'/'+pad(d.getMonth()+1)+'/'+d.getFullYear();}
+    async function pdfOrario(pi){
+      const p=DB.schedulePeriods[pi]; if(!p)return;
+      let nome=localStorage.getItem('ctm:nome')||'';
+      nome=prompt('Nome e cognome da riportare nella comunicazione:', nome);
+      if(nome===null)return; nome=nome.trim(); if(!nome){toast('Serve il nome per la comunicazione');return;}
+      try{localStorage.setItem('ctm:nome',nome);}catch(_){}
+      try{ await caricaJsPDF(); }catch(_){ toast('Per creare il PDF serve la connessione'); return; }
+      const {jsPDF}=window.jspdf;
+      const v=verificaPeriodo(pi);
+      const fascia=(s)=>(s&&s.start&&s.end)?(s.start+' – '+s.end):'—';
+      const righe=IDX_.map((wd,i)=>{
+        const g=v.giorni[wd];
+        const cap=SD_[i].charAt(0).toUpperCase()+SD_[i].slice(1);
+        return [cap,
+          g.pn?fascia(g.a)+(g.a.pausa?'\npausa '+g.a.pausa+' min':'')+'\n('+fmtHM(g.pn)+')':'—',
+          g.sn?fascia(g.b)+(g.b.pausa?'\npausa '+g.b.pausa+' min':'')+'\n('+fmtHM(g.sn)+')':'—',
+          g.mn?fascia(g.m)+'\n('+fmtHM(g.mn)+')':'—',
+          g.tot?fmtHM(g.tot):'—'];
+      });
+      const haMC=v.mc>0;
+      const decorrenza=p.from?('con decorrenza dalla settimana del '+dataItFull(p.from)):('dall’inizio dell’anno accademico'+(DB.yearLabel?' '+DB.yearLabel:''));
+      const oggi=new Date();
+      const doc=new jsPDF({unit:'mm',format:'a4'});
+      const W=doc.internal.pageSize.getWidth(), M=20;
+      doc.setFont('helvetica','bold'); doc.setFontSize(12);
+      doc.text('Conservatorio di Musica «Niccolò Piccinni» – Bari', M, 22);
+      doc.setFontSize(16); doc.text('Comunicazione dell’orario di servizio', M, 32);
+      doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+      doc.text('Alla Segreteria del personale', M, 42);
+      const intro='Il/La sottoscritto/a '+nome+' comunica il proprio orario di servizio settimanale, '+decorrenza+', articolato come segue:';
+      const introRighe=doc.splitTextToSize(intro, W-2*M);
+      doc.text(introRighe, M, 52);
+      const y0=52+introRighe.length*5+4;
+      doc.autoTable({
+        startY:y0, margin:{left:M,right:M},
+        head:[['Giorno','Presenza ordinaria','Studio','Masterclass','Totale']],
+        body:righe,
+        foot:[['Totale settimana', fmtHM(v.pres), fmtHM(v.stud), haMC?fmtHM(v.mc):'—', fmtHM(v.totAll)]],
+        styles:{font:'helvetica',fontSize:9.5,cellPadding:2.2,valign:'middle',lineColor:[190,190,190],lineWidth:0.2},
+        headStyles:{fillColor:[0,63,78],textColor:255,fontStyle:'bold',halign:'center'},
+        footStyles:{fillColor:[235,239,240],textColor:[20,20,20],fontStyle:'bold'},
+        columnStyles:{0:{fontStyle:'bold',cellWidth:28},1:{halign:'center'},2:{halign:'center'},3:{halign:'center'},4:{halign:'center',cellWidth:22}},
+        theme:'grid',
+      });
+      let y=doc.lastAutoTable.finalY+9;
+      doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.text('Riepilogo settimanale', M, y); y+=6;
+      doc.setFont('helvetica','normal'); doc.setFontSize(10);
+      const note=[
+        '• Presenza ordinaria '+fmtHM(v.pres)+' + studio '+fmtHM(v.stud)+(v.oltre?' + Masterclass oltre il tetto '+fmtHM(v.oltre):'')+' = '+fmtHM(v.tot)+' (obbligo settimanale 36 ore).',
+      ];
+      if(haMC) note.push('• Masterclass (funzioni aggiuntive, retribuite come straordinario da contratto d’istituto): '+fmtHM(v.mc)+' settimanali'+(v.oltre?', di cui '+fmtHM(v.oltre)+' oltre il tetto delle 9 ore di straordinario, che riducono di pari misura la presenza ordinaria':'')+'.');
+      if(haMC) note.push('• Totale complessivo: '+fmtHM(v.totAll)+' settimanali (limite 45 ore).');
+      note.forEach(t=>{const r=doc.splitTextToSize(t, W-2*M); doc.text(r, M, y); y+=r.length*5+1.5;});
+      y+=10;
+      doc.text('Bari, '+pad(oggi.getDate())+'/'+pad(oggi.getMonth()+1)+'/'+oggi.getFullYear(), M, y);
+      doc.text('Firma', W-M-60, y); doc.setDrawColor(120); doc.line(W-M-48, y+1, W-M, y+1);
+      doc.setFontSize(8); doc.setTextColor(130);
+      doc.text('Generato con Registro presenze · '+nome, M, doc.internal.pageSize.getHeight()-12);
+      const nomeFile='orario-servizio-'+(p.from?('dal-'+p.from):'inizio-anno')+'.pdf';
+      const blob=doc.output('blob');
+      const file=new File([blob], nomeFile, {type:'application/pdf'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file], title:'Orario di servizio'}); return; }
+        catch(e){ if(e&&e.name==='AbortError')return; }
+      }
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=nomeFile; a.target='_blank';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+      toast('PDF pronto');
+    }
     /* ============ Orario di lavoro: presenza + studio in un'unica tabella ============
        Modello dati invariato (schedulePeriods / studyPeriods), ma le due liste
        vengono tenute ALLINEATE (stesse date di validita', stesso numero di
@@ -4610,6 +4698,7 @@ import * as repo from './js/repo.js';
             +'<div class="orario-list">'+righe+'</div>'
             +'<div class="orario-foot" data-foot="'+pi+'">'+piedeHTML(pi)+'</div>'
             +'<div class="setrow" style="margin:12px 0 0;gap:8px">'
+              +'<button class="btn ghost dsm" data-pdforario="'+pi+'">PDF per la segreteria</button>'
               +'<button class="btn ghost dsm" data-dupperiod data-k="pres" data-pi="'+pi+'">Duplica</button>'
               +(pi>0?'<button class="linkbtn del" data-k="pres" data-pi="'+pi+'" data-removeperiod>Rimuovi</button>':'')
             +'</div>'
@@ -4918,6 +5007,9 @@ import * as repo from './js/repo.js';
         nuovaCoppia(P[P.length-1],S[S.length-1]);
         toast('Nuova variazione: imposta la data di validità');
       });
+      /* PDF dell'orario: la libreria si precarica cosi' il tocco apre subito la condivisione */
+      caricaJsPDF().catch(()=>{});
+      view.querySelectorAll('[data-pdforario]').forEach(b=>b.onclick=()=>{ commitOrario(); pdfOrario(+b.dataset.pdforario); });
       view.querySelectorAll('[data-dupperiod]').forEach(b=>b.onclick=()=>{
         const obj=DB.schedulePeriods[+b.dataset.pi];
         commitOrario();
