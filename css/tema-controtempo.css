@@ -355,3 +355,18 @@ html{touch-action:manipulation}   /* iOS: niente zoom da doppio tocco */
 .ag-msg.show{display:flex;gap:10px}
 .ag-msg.err{background:var(--rosso-fondo);border:1px solid var(--rosso);color:var(--rosso)}
 .ag-msg.ok{background:var(--teal-wash);border:1px solid var(--ev-bordo);color:var(--teal)}
+
+/* ---------- Masterclass e straordinario ---------------------------------- */
+#appRoot,#appRoot[data-theme]{--mc:#6f4fb0;--mc-wash:rgba(111,79,176,.10)}
+html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-wash:rgba(185,163,230,.16)}
+.kl2.m{background:var(--mc)}
+.chip-mini.chip-mc{background:var(--mc-wash);color:var(--mc)}
+.wtag--mc{background:var(--mc-wash);color:var(--mc)}
+.sum-extra{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:12px;padding-top:10px;border-top:1px solid var(--ctm-linea-soft);font-size:13px;color:var(--ink-soft)}
+.sum-extra b{color:var(--ink);font-variant-numeric:tabular-nums}
+.sum-extra b.neg{color:var(--yellow-d)}
+.sum-warn{margin-top:6px;font-size:12px;color:var(--yellow-d)}
+.ios .authbox--form{flex-direction:column;align-items:stretch}
+.authrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.authrow>span:first-child{flex:1;min-width:120px}
+.phfield .kl2{margin-right:4px}

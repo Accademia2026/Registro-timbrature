@@ -2988,7 +2988,7 @@ import * as repo from './js/repo.js';
        l'obbligo settimanale dei periodi che hanno solo 'schedule' senza
        fasce orarie, sintetizzando una fascia dalle 08:00 della durata giusta. */
     function normalizzaBackup(o){
-      o.entries=o.entries||{}; o.authorized=o.authorized||{}; o.skipDays=o.skipDays||{};
+      o.entries=o.entries||{}; o.authorized=o.authorized||{}; o.pagate=o.pagate||{}; o.skipDays=o.skipDays||{};
       o.people=o.people||[]; o.events=o.events||[];
       o.entitlements=Array.isArray(o.entitlements)?o.entitlements:[];
       const from=o.startDate?iso(mondayOf(parseISO(o.startDate))):'';
@@ -3070,10 +3070,20 @@ import * as repo from './js/repo.js';
     function obligation(){return Object.values(scheduleForWeek(thisWeekMon())).reduce((a,b)=>a+(+b||0),0);}
     function expectedFor(date){return +scheduleForWeek(monOf(date))[parseISO(date).getDay()]||0;}
     function isSkipped(dISO){return !!DB.skipDays[dISO];}
+    /* Masterclass pianificata in orario (fascia mcs/mce nelle slot di presenza) */
+    const CAP_STRA=9*60;            /* tetto straordinario settimanale */
+    const ORE_MAX_SETT=45*60;       /* 36h + 9h di straordinario */
+    function mcNetSlot(sl){const ds=t2m(sl&&sl.mcs),de=t2m(sl&&sl.mce);return (ds!=null&&de!=null&&de>ds)?(de-ds):0;}
+    function plannedMC(mon){
+      const p=periodFor(DB.schedulePeriods,mon); if(!p||!p.slots)return 0;
+      let s=0; IDX_.forEach(wd=>{s+=mcNetSlot(p.slots[wd]);}); return s;
+    }
     function obligationForWeek(mon){
       const sch=scheduleForWeek(mon); let s=0; const m=parseISO(mon);
       for(let i=0;i<7;i++){const d=addDays(m,i),k=iso(d); if(isSkipped(k))continue; s+=(+sch[d.getDay()]||0);}
-      return s;
+      /* le ore di Masterclass pianificate oltre il tetto erodono la presenza
+         ordinaria: restano dovute (24h CCNL) e diventano debito da recuperare */
+      return s+Math.max(0,plannedMC(mon)-CAP_STRA);
     }
 
     function studyDefaultFor(date){return +studyScheduleForWeek(monOf(date))[parseISO(date).getDay()]||0;}
@@ -3105,13 +3115,16 @@ import * as repo from './js/repo.js';
       const study=dayStudyMin(date,e);
       const beh=ACTBY[e&&e.act]?.beh;
       const pw=presenceWork(e);
+      /* le ore di Masterclass escono dalla presenza ordinaria: sono pagate a
+         parte e non entrano mai nel saldo (non ripianano il debito) */
+      const mc=dayMC(e);
       let base;
       if(!e||!e.act) base=0;
-      else if(beh==='work'||beh==='hour') base=pw.net;
-      else if(beh==='special') base=(pw.net>0?pw.net:expectedFor(date));
+      else if(beh==='work'||beh==='hour') base=Math.max(0,pw.net-mc);
+      else if(beh==='special') base=(pw.net>0?Math.max(0,pw.net-mc):expectedFor(date));
       else base=0;
       const capped=Math.max(0, base-DAILY_CAP);
-      return {study, pw, base, capped, cappedBase:Math.min(base,DAILY_CAP), beh, deducted:pw.autoBreak+capped};
+      return {study, pw, base, mc, capped, cappedBase:Math.min(base,DAILY_CAP), beh, deducted:pw.autoBreak+capped};
     }
     function dayMinutes(date,e){
       if(e&&e.act){const beh=ACTBY[e.act]?.beh; if(beh==='day'||beh==='holiday')return expectedFor(date);}
@@ -3135,17 +3148,47 @@ import * as repo from './js/repo.js';
       let tot=0; for(let i=0;i<7;i++){const d=iso(addDays(parseISO(mon),i)); if(isSkipped(d))continue; tot+=dayStudyMin(d,DB.entries[d]);}
       return tot;
     }
+    function dayMC(e){
+      if(!e||!e.act||!e.mc)return 0;
+      const beh=ACTBY[e.act]?.beh;
+      return (beh==='work'||beh==='hour'||beh==='special')?Math.max(0,+e.mc||0):0;
+    }
+    function weekMC(mon){
+      let tot=0; for(let i=0;i<7;i++){const d=iso(addDays(parseISO(mon),i)); if(isSkipped(d))continue; tot+=dayMC(DB.entries[d]);}
+      return tot;
+    }
     function weekExcessMin(mon){return Math.max(0,weekTotal(mon)-obligationForWeek(mon));}
-    function authForWeek(mon){return Math.min(DB.authorized[mon]||0, weekExcessMin(mon));}
-    function runningBalance(){
+    function pagateMap(){return DB.pagate||(DB.pagate={});}
+    /* conti della settimana dato il saldo precedente (balPrev):
+       - c<0: la settimana e' in debito
+       - c>0: le ore ordinarie in piu' ripianano PRIMA il debito precedente;
+              solo il resto e' straordinario, da autorizzare "a credito" (entra
+              nel saldo) o "pagato" (monte a parte). La Masterclass e' sempre
+              pagata a parte e non ripiana mai il debito. */
+    function weekCalc(mon,balPrev){
+      const tot=weekTotal(mon), obl=obligationForWeek(mon), c=tot-obl, mc=weekMC(mon);
+      let recupero=0, resto=0, credito=0, pagate=0;
+      if(c>0){
+        recupero=Math.min(c, Math.max(0,-balPrev));
+        resto=c-recupero;
+        credito=Math.min(DB.authorized[mon]||0, resto);
+        pagate=Math.min(pagateMap()[mon]||0, resto-credito);
+      }
+      const risposto=DB.authorized[mon]!=null||pagateMap()[mon]!=null;
+      const stra=credito+pagate+mc, oltre=Math.max(0,stra-CAP_STRA);
+      const totale=tot+weekStudy(mon)+mc;
+      const delta=c<0?c:recupero+credito;
+      return {tot,obl,c,mc,recupero,resto,credito,pagate,risposto,stra,oltre,totale,delta,balPrev,balDopo:balPrev+delta};
+    }
+    function saldoPrima(mon){
       let bal=DB.initialBalanceMin||0;
-      weeksWithData().forEach(mon=>{
-        const c=weekTotal(mon)-obligationForWeek(mon);
-        if(c>0) bal += authForWeek(mon);
-        else    bal += c;
-      });
+      for(const wk of weeksWithData()){ if(mon!=null&&wk>=mon)break; bal+=weekCalc(wk,bal).delta; }
       return bal;
     }
+    function weekInfo(mon){return weekCalc(mon,saldoPrima(mon));}
+    function authForWeek(mon){return weekInfo(mon).credito;}
+    function pagateForWeek(mon){return weekInfo(mon).pagate;}
+    function runningBalance(){return saldoPrima(null);}
     function usage(entId){
       const ent=DB.entitlements.find(x=>x.id===entId);
       const unit=ent?ent.unit:'GG';
@@ -3230,9 +3273,14 @@ import * as repo from './js/repo.js';
       if(c>0)tags.push(['pos','Eccedenza '+fmtHM(c,true)]);
       else if(c<0)tags.push(['neg','Sotto soglia '+fmtHM(c,true)]);
       else tags.push(['ok','In pari']);
-      const aut=authForWeek(mon);
-      if(aut>0)tags.push(['pos','Straordinario aut. '+fmtHM(aut)]);
-      else if(c>0&&DB.authorized[mon]===0)tags.push(['mut','Eccedenza non autorizzata']);
+      const wi=weekInfo(mon);
+      if(wi.recupero>0)tags.push(['ok','Ripiana debito '+fmtHM(wi.recupero)]);
+      if(wi.credito>0)tags.push(['pos','Straord. a credito '+fmtHM(wi.credito)]);
+      if(wi.pagate>0)tags.push(['pos','Straord. pagato '+fmtHM(wi.pagate)]);
+      if(wi.resto>0&&wi.risposto&&!wi.credito&&!wi.pagate)tags.push(['mut','Eccedenza non autorizzata']);
+      if(wi.mc>0)tags.push(['mc','Masterclass '+fmtHM(wi.mc)]);
+      if(wi.oltre>0)tags.push(['neg','+'+fmtHM(wi.oltre)+' oltre il tetto 9h']);
+      if(wi.totale>ORE_MAX_SETT)tags.push(['neg','Oltre le 45h']);
       const conta={}; let rimossi=0;
       for(let i=0;i<7;i++){
         const k=iso(addDays(m,i)), e=DB.entries[k];
@@ -3312,12 +3360,14 @@ import * as repo from './js/repo.js';
               +'<div class="num '+(bal<0?'neg':'pos')+'" style="font-size:var(--t-large);font-weight:600;line-height:1">'+fmtHM(bal,true)+'</div></div>'
               +'<span class="badge '+(bal<0?'badge--neg':'badge--pos')+'">'+(bal<0?'Debito':'Credito')+'</span></div>'
             +'<div class="row"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+(wks.length?' <small class="muted">\u00b7 '+over+' in eccedenza \u00b7 '+under+' sotto</small>':'')+'</span></div>'
-            +'<div class="row"><span class="row__label">Straordinario autorizzato</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+authForWeek(m),0))+'</span></div>'
+            +'<div class="row"><span class="row__label">Straordinario a credito</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+authForWeek(m),0))+'</span></div>'
+            +'<div class="row"><span class="row__label">Straordinario pagato</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+pagateForWeek(m),0))+'</span></div>'
+            +'<div class="row"><span class="row__label">Masterclass <small class="muted">pagate</small></span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekMC(m),0))+'</span></div>'
             +'<div class="row"><span class="row__label">Ore di studio</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekStudy(m),0))+'</span></div>'
             +'<div class="row"><span class="row__label">Ferie residue</span><span class="row__value">'+ferieRes+' <small class="muted">su '+ferieTot+' gg</small></span></div>'
             +'<div class="row"><span class="row__label">Malattia</span><span class="row__value">'+malattia+' <small class="muted">gg</small></span></div>'
             +'<div class="row"><span class="row__label">Omesse timbrature</span><span class="row__value '+(omessaCount()?'neg':'')+'">'+omessaCount()+'</span></div>'
-            +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza e straordinario autorizzato; lo studio resta a parte.</p>'
+            +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza ordinaria e straordinario a credito. Masterclass, straordinario pagato e studio restano a parte.</p>'
           +'</div></div>'
           +'<div><div class="group-header">'+(ultima?'Ultima settimana':'Settimane')+'</div><div class="group">'+settimane+'</div>'
             +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Le etichette raccontano cosa \u00e8 successo.</p></div>'
@@ -3356,6 +3406,7 @@ import * as repo from './js/repo.js';
         if(s2)pezzi.push(s2);
         if(!s1&&!s2&&!e.act)pezzi.push('<span class="muted">––:––</span>');
         if(beh==='hour'&&e.ph)pezzi.push('perm '+fmtHM(e.ph));
+        if(dayMC(e)>0)pezzi.push('<span class="chip-mini chip-mc">MC '+fmtHM(dayMC(e))+'</span>');
       }
       const st=dayStudyMin(key,e);
       if(st>0)pezzi.push('st '+fmtHM(st));
@@ -3387,10 +3438,27 @@ import * as repo from './js/repo.js';
       if(showPh){
         x+='<div class="phfield"><span class="muted">Ore permesso</span><input class="note" style="width:90px" type="number" min="0" step="0.25" data-k="'+key+'" data-f="phh" value="'+(e.ph!=null?(e.ph/60):'')+'" placeholder="es. 2"></div>';
       }
+      if(showTimes){
+        /* ore della giornata dedicate a Masterclass: pagate a parte, tolte dalla presenza ordinaria */
+        x+='<div class="phfield"><span class="muted"><i class="kl2 m"></i>di cui Masterclass</span><input class="note" style="width:90px" type="number" min="0" step="0.25" data-k="'+key+'" data-f="mch" value="'+(e.mc?(e.mc/60):'')+'" placeholder="ore"></div>';
+      }
       x+='<input class="note" type="text" data-k="'+key+'" data-f="note" value="'+((e.note||'').replace(/"/g,'&quot;'))+'" placeholder="Note (facoltative)">';
       const wI=dayWorkInfo(key,e);
       if(wI.deducted>0){const parts=[];if(wI.pw.autoBreak>0)parts.push('pausa '+fmtHM(wI.pw.autoBreak));if(wI.capped>0)parts.push('tetto 9h');x+='<div class="day__note">−'+fmtHM(wI.deducted)+' · '+parts.join(' + ')+'</div>';}
+      if(wI.mc>0)x+='<div class="day__note">Masterclass '+fmtHM(wI.mc)+' pagate a parte · presenza ordinaria '+fmtHM(wI.base)+'</div>';
       return x;
+    }
+    /* riga sotto la barra: Masterclass e straordinario con il tetto delle 9h */
+    function extraSettimanaHTML(mon){
+      const wi=weekInfo(mon);
+      if(!wi.mc&&!wi.stra&&wi.totale<=ORE_MAX_SETT)return '';
+      const p=[];
+      if(wi.mc>0)p.push('<span><i class="kl2 m"></i>Masterclass <b>'+fmtHM(wi.mc)+'</b> <small class="muted">pagate</small></span>');
+      p.push('<span>Straordinario <b class="'+(wi.oltre>0?'neg':'')+'">'+fmtHM(wi.stra)+'</b> <small class="muted">/ 9h</small></span>');
+      let h='<div class="sum-extra">'+p.join('')+'</div>';
+      if(wi.oltre>0)h+='<div class="sum-warn">+'+fmtHM(wi.oltre)+' oltre il tetto: erodono la presenza ordinaria'+(wi.c<0?' · debito '+fmtHM(-wi.c):'')+'</div>';
+      if(wi.totale>ORE_MAX_SETT)h+='<div class="sum-warn">⚠️ '+fmtHM(wi.totale)+' complessive: oltre le 45h settimanali</div>';
+      return h;
     }
     function renderRegistro(){
       if(!weekCursor) weekCursor=iso(mondayOf(new Date()));
@@ -3434,25 +3502,35 @@ import * as repo from './js/repo.js';
         }
       }
 
-      const excessMin=Math.max(0,c), authMin=authForWeek(weekCursor);
+      const wi=weekInfo(weekCursor), resto=wi.resto;
       let authBar='';
       if(c>0){
-        if(authEditWeek===weekCursor){
-          const dh=Math.floor((authMin||excessMin)/60), dmn=(authMin||excessMin)%60;
-          authBar='<div class="authbox"><span><b>Straordinario autorizzato</b> (max '+fmtHM(excessMin)+'):</span>'
-            +'<input type="number" id="authH" min="0" max="'+Math.floor(excessMin/60)+'" value="'+dh+'">h'
-            +'<input type="number" id="authM" min="0" max="59" value="'+dmn+'">m'
-            +'<button class="ios-btn" id="authSave">Conferma</button><button class="ilink" id="authCancel">Annulla</button></div>';
-        } else if(authMin>0){
-          authBar='<div class="authbox"><span>\u2713 <b>'+fmtHM(authMin)+'</b> di straordinario autorizzato nel monte \u00b7 eccedenza '+fmtHM(excessMin)+'</span><span style="flex:1"></span>'
-            +'<button class="ilink" id="authEdit">Modifica</button><button class="idanger" id="authRemove">Rimuovi</button></div>';
-        } else if(DB.authorized[weekCursor]===0){
-          /* risposta \u00abNo\u00bb gia' data: l'eccedenza resta fuori dal monte */
-          authBar='<div class="authbox"><span>Eccedenza di <b>'+fmtHM(excessMin)+'</b> non autorizzata come straordinario.</span><span style="flex:1"></span>'
-            +'<button class="ilink" id="authEdit">Cambia</button></div>';
-        } else {
-          authBar='<div class="authbox"><span>Hai <b>'+fmtHM(excessMin)+'</b> di ore eccedenti: sono straordinario autorizzato?</span><span style="flex:1"></span>'
-            +'<button class="ios-btn" id="authAdd">S\u00ec</button><button class="ilink" id="authNo">No</button></div>';
+        /* prima il recupero del debito precedente (solo ore ordinarie) */
+        if(wi.recupero>0){
+          authBar+='<div class="authbox"><span>\u2713 <b>'+fmtHM(wi.recupero)+'</b> in pi\u00f9 ripianano il debito precedente (saldo prima: '+fmtHM(wi.balPrev,true)+')'
+            +(resto>0?'':' \u00b7 nessuno straordinario')+'</span></div>';
+        }
+        if(resto>0){
+          if(authEditWeek===weekCursor){
+            const hm=v=>[Math.floor(v/60),v%60];
+            const [ch,cm]=hm(wi.credito||(wi.pagate?0:resto)), [ph,pm]=hm(wi.pagate);
+            authBar+='<div class="authbox authbox--form"><span><b>Straordinario</b> da assegnare: max '+fmtHM(resto)+'</span>'
+              +'<div class="authrow"><span>A credito nel saldo</span><input type="number" id="authH" min="0" max="'+Math.floor(resto/60)+'" value="'+ch+'">h<input type="number" id="authM" min="0" max="59" value="'+cm+'">m</div>'
+              +'<div class="authrow"><span>Pagate a parte</span><input type="number" id="pagH" min="0" max="'+Math.floor(resto/60)+'" value="'+ph+'">h<input type="number" id="pagM" min="0" max="59" value="'+pm+'">m</div>'
+              +'<div class="authrow"><button class="ios-btn" id="authSave">Conferma</button><button class="ilink" id="authCancel">Annulla</button></div></div>';
+          } else if(wi.credito>0||wi.pagate>0){
+            const parti=[]; if(wi.credito>0)parti.push('<b>'+fmtHM(wi.credito)+'</b> a credito nel saldo'); if(wi.pagate>0)parti.push('<b>'+fmtHM(wi.pagate)+'</b> pagate a parte');
+            const fuori=resto-wi.credito-wi.pagate;
+            authBar+='<div class="authbox"><span>\u2713 Straordinario: '+parti.join(' \u00b7 ')+(fuori>0?' \u00b7 '+fmtHM(fuori)+' non autorizzate':'')+'</span><span style="flex:1"></span>'
+              +'<button class="ilink" id="authEdit">Modifica</button><button class="idanger" id="authRemove">Rimuovi</button></div>';
+          } else if(wi.risposto){
+            /* risposta \u00abNo\u00bb gia' data: l'eccedenza resta fuori dal monte */
+            authBar+='<div class="authbox"><span>Eccedenza di <b>'+fmtHM(resto)+'</b> non autorizzata come straordinario.</span><span style="flex:1"></span>'
+              +'<button class="ilink" id="authEdit">Cambia</button></div>';
+          } else {
+            authBar+='<div class="authbox"><span>Hai <b>'+fmtHM(resto)+'</b> di straordinario: dove vanno?</span><span style="flex:1"></span>'
+              +'<button class="ios-btn" id="authCred">A credito</button><button class="ios-btn" id="authPag">Pagate</button><button class="ilink" id="authNo">No</button></div>';
+          }
         }
       }
 
@@ -3486,6 +3564,7 @@ import * as repo from './js/repo.js';
             +'<span class="meter" style="flex:1"><span class="meter__fill '+(c>0?'meter__fill--pos':(c<0?'meter__fill--neg':''))+'" style="width:'+Math.min(100,pctFill+overPct)+'%"></span><span class="meter__goal" style="left:'+goalLeft+'%"></span></span>'
             +'<span class="badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''))+'">'+(c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari'))+'</span>'
           +'</div>'
+          +'<div id="sumExtra">'+extraSettimanaHTML(weekCursor)+'</div>'
           +'</div>'
           +authBar
           +weekActions
@@ -3541,17 +3620,24 @@ import * as repo from './js/repo.js';
         for(let i=0;i<7;i++){const dd=addDays(mon,i),k=iso(dd); if(expectedFor(k)>0){delete DB.skipDays[k];DB.entries[k]={act:'ferie'};saveDay(k);}}
         refreshChip(); renderRegistro();
       };
-      const aAdd=document.getElementById('authAdd'); if(aAdd)aAdd.onclick=()=>{authEditWeek=weekCursor;renderRegistro();};
-      const aNo=document.getElementById('authNo'); if(aNo)aNo.onclick=()=>{DB.authorized[weekCursor]=0;saveAuth(weekCursor);refreshChip();renderRegistro();};
+      const setStra=(cred,pag)=>{
+        DB.authorized[weekCursor]=Math.max(0,Math.min(cred,resto));
+        pagateMap()[weekCursor]=Math.max(0,Math.min(pag,resto-DB.authorized[weekCursor]));
+        authEditWeek=null; saveAuth(weekCursor); refreshChip(); renderRegistro();
+      };
+      const aCred=document.getElementById('authCred'); if(aCred)aCred.onclick=()=>setStra(resto,0);
+      const aPag=document.getElementById('authPag'); if(aPag)aPag.onclick=()=>setStra(0,resto);
+      const aNo=document.getElementById('authNo'); if(aNo)aNo.onclick=()=>setStra(0,0);
       const aEdit=document.getElementById('authEdit'); if(aEdit)aEdit.onclick=()=>{authEditWeek=weekCursor;renderRegistro();};
-      const aRem=document.getElementById('authRemove'); if(aRem)aRem.onclick=()=>{delete DB.authorized[weekCursor];authEditWeek=null;saveAuth(weekCursor);refreshChip();renderRegistro();};
+      const aRem=document.getElementById('authRemove'); if(aRem)aRem.onclick=()=>{delete DB.authorized[weekCursor];delete pagateMap()[weekCursor];authEditWeek=null;saveAuth(weekCursor);refreshChip();renderRegistro();};
       const aCancel=document.getElementById('authCancel'); if(aCancel)aCancel.onclick=()=>{authEditWeek=null;renderRegistro();};
       const aSave=document.getElementById('authSave'); if(aSave)aSave.onclick=()=>{
-        let h=parseInt(document.getElementById('authH').value,10); if(isNaN(h)||h<0)h=0;
-        let m=parseInt(document.getElementById('authM').value,10); if(isNaN(m)||m<0)m=0; if(m>59)m=59;
-        let total=Math.min(h*60+m, excessMin);
-        if(total>0)DB.authorized[weekCursor]=total; else delete DB.authorized[weekCursor];
-        authEditWeek=null; saveAuth(weekCursor); refreshChip(); renderRegistro();
+        const leggi=(idH,idM)=>{
+          let h=parseInt(document.getElementById(idH).value,10); if(isNaN(h)||h<0)h=0;
+          let m=parseInt(document.getElementById(idM).value,10); if(isNaN(m)||m<0)m=0; if(m>59)m=59;
+          return h*60+m;
+        };
+        setStra(leggi('authH','authM'), leggi('pagH','pagM'));
       };
     }
     function recalcWeekLive(el,key,e){
@@ -3559,6 +3645,7 @@ import * as repo from './js/repo.js';
       const sums=view.querySelectorAll('.sum-v');
       if(sums[0]){sums[0].textContent=fmtHM(tot); sums[1].textContent=fmtHM(obl); sums[2].textContent=fmtHM(c,true); sums[2].className='num sum-v '+(c<0?'neg':(c>0?'pos':''));}
       const st=document.getElementById('sumStudio'); if(st)st.textContent=fmtHM(weekStudy(weekCursor));
+      const ex=document.getElementById('sumExtra'); if(ex)ex.innerHTML=extraSettimanaHTML(weekCursor);
       const esEl=view.querySelector('.sum-esito');
       if(esEl){esEl.className='badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''));esEl.textContent=c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari');}
       /* aggiorna la riga compatta del giorno che si sta modificando */
@@ -3596,8 +3683,8 @@ import * as repo from './js/repo.js';
     function pulisciEntry(key,e){
       /* una 'presenza' senza orari, permesso e note non e' una giornata */
       const senzaOrari=!e.m1in&&!e.m1out&&!e.m2in&&!e.m2out;
-      if(e.act==='presenza' && senzaOrari && e.ph==null && !e.note) delete e.act;
-      if(!e.act && senzaOrari && e.ph==null && !e.note && e.studyMin==null) delete DB.entries[key];
+      if(e.act==='presenza' && senzaOrari && e.ph==null && !e.mc && !e.note) delete e.act;
+      if(!e.act && senzaOrari && e.ph==null && !e.mc && !e.note && e.studyMin==null) delete DB.entries[key];
     }
     function kpRefresh(){
       const disp=document.getElementById('kpDisp');
@@ -3625,7 +3712,7 @@ import * as repo from './js/repo.js';
         if(el.dataset.scht!=null){
           const wd=+(el.dataset.s ?? el.dataset.e);
           const giorno=SD_[IDX_.indexOf(wd)]||'';
-          w.textContent=(el.dataset.s!=null?'inizio':'fine')+' · '+giorno+' · '+(el.dataset.k==='pres'?'presenza':'studio');
+          w.textContent=(el.dataset.s!=null?'inizio':'fine')+' · '+giorno+' · '+({pres:'presenza',study:'studio',mc:'masterclass'}[el.dataset.k]||'');
         } else {
           const dd=parseISO(el.dataset.k);
           w.textContent=(KP_LABELS[el.dataset.f]||'')+' · '+DAYNAMES[(dd.getDay()+6)%7]+' '+pad(dd.getDate())+'/'+pad(dd.getMonth()+1);
@@ -3698,13 +3785,14 @@ import * as repo from './js/repo.js';
       const el=ev.target, key=el.dataset.k, f=el.dataset.f;
       const e=DB.entries[key]||(DB.entries[key]={});
       if(f==='act'){
-        const haDati=e.m1in||e.m1out||e.m2in||e.m2out||e.ph!=null||e.note;
+        const haDati=e.m1in||e.m1out||e.m2in||e.m2out||e.ph!=null||e.mc||e.note;
         if(!el.value && haDati && !confirm('Svuotare questa giornata? Orari, permesso e note verranno cancellati.')){
           el.value=e.act||''; return;
         }
         e.act=el.value; if(!e.act && e.studyMin==null) delete DB.entries[key];
       }
       else if(f==='phh'){ e.ph=el.value===''?null:Math.round(parseFloat(el.value)*60); }
+      else if(f==='mch'){ const v=el.value===''?0:Math.round(parseFloat(el.value)*60); if(v>0)e.mc=v; else delete e.mc; }
       else if(f==='studyh'){ e.studyMin=el.value===''?0:Math.round(parseFloat(el.value)*60); }
       else { e[f]=el.value; }
       saveDay(key);
@@ -4340,40 +4428,47 @@ import * as repo from './js/repo.js';
       return true;
     }
     /* valore di una fascia: dal DOM se il giorno e' aperto, altrimenti dal modello */
+    /* kind: 'pres' | 'study' | 'mc' (la Masterclass vive nelle slot di presenza come mcs/mce) */
     function slotDi(kind,pi,wd){
-      const list=kind==='pres'?DB.schedulePeriods:DB.studyPeriods;
+      const list=kind==='study'?DB.studyPeriods:DB.schedulePeriods;
       const m=(list[pi]&&list[pi].slots&&list[pi].slots[wd])||{};
       const q=x=>view.querySelector('[data-scht][data-k="'+kind+'"][data-pi="'+pi+'"][data-'+x+'="'+wd+'"]');
       const bs=q('s'), be=q('e');
+      if(kind==='mc') return { start: bs?(bs.dataset.val||''):(m.mcs||''), end: be?(be.dataset.val||''):(m.mce||''), pausa:0 };
       const bp=view.querySelector('input.schpzin[data-k="'+kind+'"][data-pi="'+pi+'"][data-bp="'+wd+'"]');
       return { start: bs?(bs.dataset.val||''):(m.start||''), end: be?(be.dataset.val||''):(m.end||''), pausa: bp?(parseInt(bp.value,10)||0):(+m.pausa||0) };
     }
     function nettoSlot(sl){const ds=t2m(sl.start),de=t2m(sl.end);return (ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(sl.pausa||0)):0;}
     function periodNet(kind,pi,wd){return nettoSlot(slotDi(kind,pi,wd));}
     function giornoInfo(pi,wd){
-      const a=slotDi('pres',pi,wd), b=slotDi('study',pi,wd);
-      const pn=nettoSlot(a), sn=nettoSlot(b);
-      const overlap=pn>0&&sn>0&&t2m(b.start)<t2m(a.end)&&t2m(b.end)>t2m(a.start);
-      return {a,b,pn,sn,tot:pn+sn,overlap,err:overlap||pn+sn>DAILY_CAP};
+      const a=slotDi('pres',pi,wd), b=slotDi('study',pi,wd), m=slotDi('mc',pi,wd);
+      const pn=nettoSlot(a), sn=nettoSlot(b), mn=nettoSlot(m);
+      const inters=(x,nx,y,ny)=>nx>0&&ny>0&&t2m(y.start)<t2m(x.end)&&t2m(y.end)>t2m(x.start);
+      const overlap=inters(a,pn,b,sn)||inters(a,pn,m,mn)||inters(b,sn,m,mn);
+      const tot=pn+sn+mn;
+      return {a,b,m,pn,sn,mn,tot,overlap,err:overlap||tot>DAILY_CAP};
     }
     function verificaPeriodo(pi){
-      let pres=0,stud=0; const errori=[], giorni={};
+      let pres=0,stud=0,mc=0; const errori=[], giorni={};
       IDX_.forEach((wd,i)=>{
-        const g=giornoInfo(pi,wd); giorni[wd]=g; pres+=g.pn; stud+=g.sn;
-        if(g.overlap)errori.push(SD_[i]+': presenza e studio si sovrappongono');
+        const g=giornoInfo(pi,wd); giorni[wd]=g; pres+=g.pn; stud+=g.sn; mc+=g.mn;
+        if(g.overlap)errori.push(SD_[i]+': le fasce si sovrappongono');
         if(g.tot>DAILY_CAP)errori.push(SD_[i]+': '+fmtHM(g.tot)+' supera le 9 ore');
       });
-      const tot=pres+stud;
+      /* 36h = presenza + studio + Masterclass oltre il tetto (le ore erose restano dovute) */
+      const oltre=Math.max(0,mc-CAP_STRA), tot=pres+stud+oltre, totAll=pres+stud+mc;
       if(tot<ORE_SETT)errori.push('Mancano '+fmtHM(ORE_SETT-tot)+' alle 36 ore settimanali');
       if(tot>ORE_SETT)errori.push('Superi le 36 ore di '+fmtHM(tot-ORE_SETT));
-      return {pres,stud,tot,errori,giorni};
+      if(totAll>ORE_MAX_SETT)errori.push('Superi le 45 ore complessive di '+fmtHM(totAll-ORE_MAX_SETT));
+      return {pres,stud,mc,oltre,tot,totAll,errori,giorni};
     }
     function riassuntoGiorno(pi,wd){
       const g=giornoInfo(pi,wd);
       /* solo le fasce presenti: niente righe di riempimento */
-      if(!g.pn&&!g.sn)return '<span class="hint2">riposo</span>';
+      if(!g.pn&&!g.sn&&!g.mn)return '<span class="hint2">riposo</span>';
       let h=g.pn?'<div><i class="kl2 p"></i>'+g.a.start+'–'+g.a.end+(g.a.pausa?' <span class="hint2">pausa '+g.a.pausa+'</span>':'')+'</div>':'';
       if(g.sn)h+='<div class="s2"><i class="kl2 s"></i>'+g.b.start+'–'+g.b.end+'</div>';
+      if(g.mn)h+='<div class="s2"><i class="kl2 m"></i>'+g.m.start+'–'+g.m.end+'</div>';
       return h;
     }
     function totGiornoHTML(pi,wd){
@@ -4385,7 +4480,7 @@ import * as repo from './js/repo.js';
     function hintGiorno(pi,wd){
       /* si parla solo quando c'e' un problema */
       const g=giornoInfo(pi,wd);
-      if(g.overlap)return 'Presenza e studio si sovrappongono';
+      if(g.overlap)return 'Le fasce si sovrappongono';
       if(g.tot>DAILY_CAP)return 'Oltre le 9 ore al giorno';
       return '';
     }
@@ -4393,7 +4488,8 @@ import * as repo from './js/repo.js';
       const v=verificaPeriodo(pi);
       return '<span><i class="kl2 p"></i>Presenza <b class="mono">'+fmtHM(v.pres)+'</b></span>'
         +'<span><i class="kl2 s"></i>Studio <b class="mono">'+fmtHM(v.stud)+'</b></span>'
-        +'<span class="big2 mono'+(v.tot===ORE_SETT?'':' neg')+'">'+fmtHM(v.tot)+' / 36h</span>'
+        +(v.mc?'<span><i class="kl2 m"></i>Masterclass <b class="mono">'+fmtHM(v.mc)+'</b>'+(v.oltre?' <small class="neg">+'+fmtHM(v.oltre)+' oltre il tetto</small>':'')+'</span>':'')
+        +'<span class="big2 mono'+(v.tot===ORE_SETT?'':' neg')+'">'+fmtHM(v.tot)+' / 36h'+(v.mc?' <small class="'+(v.totAll>ORE_MAX_SETT?'neg':'muted')+'">· '+fmtHM(v.totAll)+' in tutto</small>':'')+'</span>'
         +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'');
     }
     function orarioEditorHTML(){
@@ -4424,6 +4520,8 @@ import * as repo from './js/repo.js';
                   +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="pres" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.pausa||'')+'" placeholder="0"></div>'
                 +'<div class="lab2"><i class="kl2 s"></i>Studio</div>'
                 +'<div class="pills2">'+tbtn('study',pi,wd,'s',ss.start||'')+'<span class="arr2">→</span>'+tbtn('study',pi,wd,'e',ss.end||'')+'</div>'
+                +'<div class="lab2"><i class="kl2 m"></i>Masterclass <span class="hint2">pagate a parte</span></div>'
+                +'<div class="pills2">'+tbtn('mc',pi,wd,'s',sl.mcs||'')+'<span class="arr2">→</span>'+tbtn('mc',pi,wd,'e',sl.mce||'')+'</div>'
                 +'<div class="hint2" data-dayhint="'+pi+'-'+wd+'">'+hintGiorno(pi,wd)+'</div>'
               +'</div>';
             }
@@ -4473,6 +4571,9 @@ import * as repo from './js/repo.js';
         settimane:wks.length,
         oreLavorateMin:wks.reduce((a,m)=>a+weekTotal(m),0),
         oreStudioMin:wks.reduce((a,m)=>a+weekStudy(m),0),
+        oreMasterclassMin:wks.reduce((a,m)=>a+weekMC(m),0),
+        straCreditoMin:wks.reduce((a,m)=>a+authForWeek(m),0),
+        straPagatoMin:wks.reduce((a,m)=>a+pagateForWeek(m),0),
         omesse:omessaCount(),
         permessi:DB.entitlements.map(e=>({label:e.label,unit:e.unit,total:e.total,usati:(e.used0||0)+usage(e.id)})),
       };
@@ -4491,7 +4592,7 @@ import * as repo from './js/repo.js';
         return;
       }
       /* nuovo anno (solo ora che il database e' pulito) */
-      DB.entries={}; DB.authorized={}; DB.skipDays={};
+      DB.entries={}; DB.authorized={}; DB.pagate={}; DB.skipDays={};
       DB.initialBalanceMin=bal;
       DB.startDate=nuovo; DB.yearLabel=aaLabel(nuovo);
       const prev=DB.entitlements.find(e=>e.id==='ferie_prec');
@@ -4539,6 +4640,9 @@ import * as repo from './js/repo.js';
         +riga('Settimane registrate', r.settimane??'—')
         +riga('Ore in presenza', r.oreLavorateMin!=null?fmtHM(r.oreLavorateMin):'—')
         +riga('Ore di studio', r.oreStudioMin!=null?fmtHM(r.oreStudioMin):'—')
+        +(r.oreMasterclassMin?riga('Masterclass (pagate)', fmtHM(r.oreMasterclassMin)):'')
+        +(r.straCreditoMin?riga('Straordinario a credito', fmtHM(r.straCreditoMin)):'')
+        +(r.straPagatoMin?riga('Straordinario pagato', fmtHM(r.straPagatoMin)):'')
         +riga('Ferie usate / residue', (r.ferieUsate??'—')+' / '+(r.ferieResidue??'—')+' gg')
         +(permessi?'<div class="subh" style="margin:12px 0 2px">Permessi usati</div>'+permessi:'')
         +'</div><div class="mfoot"><span class="spacer"></span><button class="btn" id="archClose">Chiudi</button></div></div>';
@@ -4555,10 +4659,11 @@ import * as repo from './js/repo.js';
         const f=i.value?iso(mondayOf(parseISO(i.value))):(pi===0?'':P[pi].from);
         P[pi].from=f; if(S[pi])S[pi].from=f;
       });
-      ['pres','study'].forEach(kind=>{
-        const list=kind==='pres'?P:S;
-        view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-s]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.s;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].start=b.dataset.val||'';});
-        view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-e]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.e;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].end=b.dataset.val||'';});
+      /* 'mc' scrive mcs/mce dentro le slot di presenza; schedule[] resta la sola presenza ordinaria */
+      [['pres','start','end'],['study','start','end'],['mc','mcs','mce']].forEach(([kind,fs,fe])=>{
+        const list=kind==='study'?S:P;
+        view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-s]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.s;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd][fs]=b.dataset.val||'';});
+        view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-e]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.e;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd][fe]=b.dataset.val||'';});
         view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].pausa=Math.max(0,parseInt(i.value,10)||0);});
         list.forEach(p=>{p.slots=p.slots||{};p.schedule=p.schedule||{};IDX_.forEach(wd=>{p.schedule[wd]=nettoSlot(p.slots[wd]||{});});p.schedule[0]=0;p.slots[0]={};});
       });
@@ -4792,7 +4897,7 @@ import * as repo from './js/repo.js';
         if(confirm('Azzerare tutte le timbrature registrate finora? Orari, permessi e impostazioni restano invariati.')){
           try{ await repo.flush(); await repo.clearTimbrature(); }
           catch(_){ toast('Azzeramento non riuscito: controlla la connessione'); return; }
-          DB.entries={}; DB.authorized={}; DB.skipDays={};
+          DB.entries={}; DB.authorized={}; DB.pagate={}; DB.skipDays={};
           weekCursor=null; refreshChip(); setView('registro'); toast('Timbrature azzerate');
         }
       };
@@ -4808,7 +4913,7 @@ import * as repo from './js/repo.js';
        Salvataggi mirati (spec sez. 6.2): ogni modifica scrive solo la riga
        toccata, via repo (che fa il debounce). */
     function saveDay(k){ repo.saveGiorno(k, DB.entries[k], !!DB.skipDays[k]); }
-    function saveAuth(mon){ repo.saveAutorizzazione(mon, DB.authorized[mon] ?? null); }
+    function saveAuth(mon){ repo.saveAutorizzazione(mon, DB.authorized[mon] ?? null, pagateMap()[mon] ?? null); }
     function savePeriods(kind){ repo.savePeriodi(kind==='study'?'studio':'presenza', kind==='study'?DB.studyPeriods:DB.schedulePeriods); }
     window.addEventListener('pagehide',()=>{try{repo.flush();}catch(e){}});
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){try{repo.flush();}catch(e){}}});

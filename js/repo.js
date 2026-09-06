@@ -91,6 +91,7 @@ export async function loadAll() {
     if (r.m2out) e.m2out = hm(r.m2out);
     if (r.permesso_min != null) e.ph = r.permesso_min;
     if (r.studio_min != null) e.studyMin = r.studio_min;
+    if (r.masterclass_min) e.mc = r.masterclass_min;
     if (r.nota) e.note = r.nota;
     if (Object.keys(e).length) entries[r.data] = e;
   }
@@ -104,8 +105,9 @@ export async function loadAll() {
     return list.length ? list : [periodoVuoto()];
   };
 
-  const authorized = {};
-  for (const r of autorizz) authorized[r.settimana] = r.minuti;
+  /* straordinario della settimana: minuti = a credito (nel saldo), pagati_min = pagato a parte */
+  const authorized = {}, pagate = {};
+  for (const r of autorizz) { authorized[r.settimana] = r.minuti; if (r.pagati_min) pagate[r.settimana] = r.pagati_min; }
 
   return {
     startDate: impostazioni.data_inizio_aa || '',
@@ -123,6 +125,7 @@ export async function loadAll() {
     entries,
     skipDays,
     authorized,
+    pagate,
     diary: {},
     /* id come STRINGHE: il prototipo li confronta con === contro i dataset
        del DOM (sempre stringhe). PostgREST accetta stringhe numeriche. */
@@ -182,7 +185,7 @@ export function saveGiorno(dateISO, entry, rimosso) {
   debounced('giorno:' + dateISO, async () => {
     const e = entry || {};
     const vuota = !e.act && !e.m1in && !e.m1out && !e.m2in && !e.m2out
-      && e.ph == null && (e.studyMin == null || e.studyMin === 0) && !e.note;
+      && e.ph == null && (e.studyMin == null || e.studyMin === 0) && !e.mc && !e.note;
     if (vuota && !rimosso) {
       const { error } = await supabase.from('timbrature').delete().eq('data', dateISO);
       if (error) onError('cancellazione giorno', { error });
@@ -195,6 +198,7 @@ export function saveGiorno(dateISO, entry, rimosso) {
       m2in: orNull(e.m2in), m2out: orNull(e.m2out),
       permesso_min: e.ph ?? null,
       studio_min: e.studyMin ?? null,
+      masterclass_min: e.mc || null,
       nota: orNull(e.note),
       rimosso: !!rimosso,
     }, { onConflict: 'user_id,data' });
@@ -236,14 +240,16 @@ export function saveDiritti(entitlements) {
 }
 
 /** Eccedenza autorizzata della settimana (minuti null/undefined = rimuovi). */
-export function saveAutorizzazione(lunediISO, minuti) {
+/** Straordinario della settimana: `minuti` a credito (nel saldo), `pagati`
+    a parte. Entrambi assenti/null = nessuna decisione presa (riga rimossa). */
+export function saveAutorizzazione(lunediISO, minuti, pagati) {
   debounced('aut:' + lunediISO, async () => {
-    if (minuti == null) {
+    if (minuti == null && pagati == null) {
       const { error } = await supabase.from('autorizzazioni').delete().eq('settimana', lunediISO);
       if (error) onError('rimozione autorizzazione', { error });
     } else {
       const { error } = await supabase.from('autorizzazioni').upsert(
-        { settimana: lunediISO, minuti },
+        { settimana: lunediISO, minuti: minuti || 0, pagati_min: pagati || 0 },
         { onConflict: 'user_id,settimana' });
       if (error) onError('salvataggio autorizzazione', { error });
     }
@@ -331,6 +337,7 @@ export async function replaceAll(DB) {
       m2in: orNull(e.m2in), m2out: orNull(e.m2out),
       permesso_min: e.ph ?? null,
       studio_min: e.studyMin ?? null,
+      masterclass_min: e.mc || null,
       nota: orNull(e.note),
       rimosso: !!(DB.skipDays || {})[d],
     };
@@ -350,7 +357,10 @@ export async function replaceAll(DB) {
   }));
   if (dirRows.length) check('import diritti', await supabase.from('diritti_permessi').insert(dirRows));
 
-  const autRows = Object.entries(DB.authorized || {}).map(([settimana, minuti]) => ({ settimana, minuti }));
+  const settimane = new Set([...Object.keys(DB.authorized || {}), ...Object.keys(DB.pagate || {})]);
+  const autRows = [...settimane].map((settimana) => ({
+    settimana, minuti: (DB.authorized || {})[settimana] || 0, pagati_min: (DB.pagate || {})[settimana] || 0,
+  }));
   if (autRows.length) check('import autorizzazioni', await supabase.from('autorizzazioni').insert(autRows));
 
   // persone: inserite una a una per ottenere i nuovi id e rimappare
