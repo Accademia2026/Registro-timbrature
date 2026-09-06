@@ -381,3 +381,8 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 .ios .dett-out .dett-row .row__label{flex:1}
 .ios .dett-out .dett-row .row__value{font-size:13px}
 .ios .dett-out .dett-row .wtag--link{margin-left:0;flex:none}
+
+/* menu a tendina dei limiti permessi: Safari iOS lo allarga quanto l'opzione
+   piu' lunga, qui deve stare dentro la scheda */
+#entPick{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;min-height:40px;text-align:left;text-align-last:left;padding-right:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wkpick select{max-width:100%;box-sizing:border-box}

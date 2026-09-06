@@ -4784,7 +4784,7 @@ import * as repo from './js/repo.js';
     function renderImpostazioni(){
       if(!DB.entitlements.some(e=>e.id===entSel)) entSel=DB.entitlements[0]?DB.entitlements[0].id:null;
       const entCur=DB.entitlements.find(e=>e.id===entSel);
-      const rows='<select class="act-sel" id="entPick" style="max-width:none;margin:8px 0 4px">'
+      const rows='<select class="act-sel" id="entPick" style="margin:8px 0 4px">'
           +DB.entitlements.map(e=>'<option value="'+e.id+'" '+(e.id===entSel?'selected':'')+'>'+esc(e.label)+' · '+e.total+' '+(e.unit==='ORE'?'ore':'gg')+'</option>').join('')
         +'</select>'
         +'<div id="entRowOut">'+(entCur?entRowHTML(entCur):'')+'</div>';
