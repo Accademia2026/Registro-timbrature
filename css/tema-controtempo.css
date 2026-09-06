@@ -386,3 +386,9 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
    piu' lunga, qui deve stare dentro la scheda */
 #entPick{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;min-height:40px;text-align:left;text-align-last:left;padding-right:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wkpick select{max-width:100%;box-sizing:border-box}
+
+/* finestra "Esporta per la segreteria": elenco di sezioni con casella */
+.chklist{display:flex;flex-direction:column;gap:2px;margin-top:-4px}
+.chk{display:flex;align-items:center;gap:12px;min-height:38px;font-size:14px;cursor:pointer;border-top:1px solid var(--ctm-linea-soft)}
+.chk:first-child{border-top:0}
+.chk input{width:20px;height:20px;accent-color:var(--teal);flex:none;margin:0}

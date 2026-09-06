@@ -4476,6 +4476,196 @@ import * as repo from './js/repo.js';
       document.getElementById('permClose').onclick=closeModal;
     }
 
+    /* ---------- Esportazione annuale per la segreteria (PDF completo o parziale) ---------- */
+    const SEZIONI_PDF=[
+      ['riepilogo','Riepilogo generale (saldo e totali)'],
+      ['settimane','Prospetto settimanale (ore fatte, dovute, straordinario)'],
+      ['timbrature','Timbrature giornaliere (tutti i giorni con gli orari)'],
+      ['ferie','Ferie'],
+      ['malattia','Malattia'],
+      ['permessi','Altri permessi e congedi (paternità, festività soppresse, permessi a ore…)'],
+      ['masterclass','Masterclass'],
+      ['straordinario','Straordinario a credito e pagato'],
+      ['comp','Riposo compensativo'],
+      ['omesse','Omesse timbrature'],
+    ];
+    function apriEsportaSegreteria(){
+      const giorni=Object.keys(DB.entries).filter(k=>hasEntry(DB.entries[k])).sort();
+      const da=DB.startDate||giorni[0]||iso(new Date()), a=iso(new Date());
+      let nome=''; try{nome=localStorage.getItem('ctm:nome')||'';}catch(_){}
+      modalBg.innerHTML='<div class="modal"><h3>Esporta per la segreteria</h3><div class="mbody">'
+        +'<p class="hint" style="margin:0">Scegli il periodo e le sezioni da includere: il PDF conterrà solo quelle.</p>'
+        +'<div class="mrow"><div class="mfield"><label>Dal</label><input type="date" id="expDa" value="'+da+'"></div><div class="mfield"><label>Al</label><input type="date" id="expA" value="'+a+'"></div></div>'
+        +'<div class="mfield"><label>Nome e cognome</label><input type="text" id="expNome" value="'+esc(nome)+'" placeholder="come deve comparire nel documento"></div>'
+        +'<div class="setrow" style="margin:0;gap:8px"><button class="btn ghost dsm" id="expTutto">Tutto</button><button class="btn ghost dsm" id="expNiente">Nessuno</button></div>'
+        +'<div class="chklist">'+SEZIONI_PDF.map(([id,lab])=>'<label class="chk"><input type="checkbox" data-sez="'+id+'" checked><span>'+esc(lab)+'</span></label>').join('')+'</div>'
+        +'</div><div class="mfoot"><button class="ilink" id="expAnnulla">Annulla</button><span class="spacer"></span><button class="btn" id="expCrea">Crea PDF</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('expAnnulla').onclick=closeModal;
+      document.getElementById('expTutto').onclick=()=>modalBg.querySelectorAll('[data-sez]').forEach(c=>c.checked=true);
+      document.getElementById('expNiente').onclick=()=>modalBg.querySelectorAll('[data-sez]').forEach(c=>c.checked=false);
+      caricaJsPDF().catch(()=>{});
+      document.getElementById('expCrea').onclick=async()=>{
+        const sez=[...modalBg.querySelectorAll('[data-sez]')].filter(c=>c.checked).map(c=>c.dataset.sez);
+        if(!sez.length){toast('Scegli almeno una sezione');return;}
+        const d1=document.getElementById('expDa').value, d2=document.getElementById('expA').value;
+        if(!d1||!d2||d1>d2){toast('Controlla le date del periodo');return;}
+        const nm=document.getElementById('expNome').value.trim();
+        if(!nm){toast('Serve il nome per il documento');return;}
+        try{localStorage.setItem('ctm:nome',nm);}catch(_){}
+        const btn=document.getElementById('expCrea'); btn.disabled=true; btn.textContent='Creazione…';
+        try{ await pdfSegreteria(d1,d2,nm,sez); closeModal(); }
+        catch(e){ toast('PDF non creato: '+(e&&e.message||'errore')); btn.disabled=false; btn.textContent='Crea PDF'; }
+      };
+    }
+    async function pdfSegreteria(da,a,nome,sez){
+      try{ await caricaJsPDF(); }catch(_){ throw new Error('serve la connessione'); }
+      const {jsPDF}=window.jspdf;
+      const has=s=>sez.includes(s);
+      const inRange=k=>k>=da&&k<=a;
+      const giorni=Object.keys(DB.entries).filter(k=>hasEntry(DB.entries[k])&&inRange(k)).sort();
+      const monDa=iso(mondayOf(parseISO(da)));
+      const wks=weeksWithData().filter(m=>m>=monDa&&m<=a);
+      const gLab=k=>{const d=parseISO(k);return DAYNAMES[(d.getDay()+6)%7];};
+      const dIt=k=>dataItFull(k);
+      const dCorta=k=>{const d=parseISO(k);return pad(d.getDate())+'/'+pad(d.getMonth()+1);};
+      const settLab=m=>rangeSettimana(m).replace(/–/g,'–');
+      const doc=new jsPDF({unit:'mm',format:'a4'});
+      const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=18;
+      let y=0;
+      const intest=()=>{
+        doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(0);
+        doc.text('Conservatorio di Musica «Niccolò Piccinni» – Bari', M, 20);
+        doc.setFontSize(16); doc.text('Prospetto presenze'+(DB.yearLabel?' · a.a. '+DB.yearLabel:''), M, 30);
+        doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
+        doc.text(nome+' · periodo dal '+dIt(da)+' al '+dIt(a), M, 38);
+        y=48;
+      };
+      const spazio=(h)=>{ if(y+h>H-22){ doc.addPage(); y=20; } };
+      const titolo=(t)=>{ spazio(16); doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(0,63,78); doc.text(t, M, y); y+=5; doc.setTextColor(0); };
+      const testo=(t)=>{ doc.setFont('helvetica','normal'); doc.setFontSize(10); const r=doc.splitTextToSize(t, W-2*M); spazio(r.length*5+2); doc.text(r, M, y); y+=r.length*5+2; };
+      const tabella=(head,body,opts)=>{
+        if(!body.length){ testo('Nessun dato nel periodo.'); y+=2; return; }
+        doc.autoTable(Object.assign({
+          startY:y+1, margin:{left:M,right:M,top:20,bottom:20}, head:[head], body,
+          styles:{font:'helvetica',fontSize:8.6,cellPadding:1.7,valign:'middle',lineColor:[200,200,200],lineWidth:0.2,overflow:'linebreak'},
+          headStyles:{fillColor:[0,63,78],textColor:255,fontStyle:'bold'},
+          alternateRowStyles:{fillColor:[245,247,247]},
+          theme:'grid',
+        }, opts||{}));
+        y=doc.lastAutoTable.finalY+9;
+      };
+      const fm=v=>fmtHM(v), fs=v=>fmtHM(v,true);
+      intest();
+      /* conteggi comuni */
+      const infoW=wks.map(m=>[m,weekInfo(m)]);
+      const somma=f=>infoW.reduce((s,[,wi])=>s+f(wi),0);
+      const perAct=act=>giorni.filter(k=>DB.entries[k].act===act);
+      if(has('riepilogo')){
+        titolo('Riepilogo generale');
+        const saldoA=(()=>{let b=DB.initialBalanceMin||0; for(const m of weeksWithData()){ if(m>a)break; b=weekCalc(m,b).balDopo; } return b;})();
+        const saldoPrimaDa=saldoPrima(monDa);
+        const righe=[
+          ['Saldo ore all’inizio del periodo', fs(saldoPrimaDa)],
+          ['Saldo ore alla fine del periodo', fs(saldoA)],
+          ['Settimane nel periodo', String(wks.length)],
+          ['Ore di presenza ordinaria', fm(somma(w=>w.tot))],
+          ['Ore dovute', fm(somma(w=>w.obl))],
+          ['Straordinario a credito', fm(somma(w=>w.credito))],
+          ['Straordinario pagato', fm(somma(w=>w.pagate))],
+          ['Riposo compensativo (dal saldo)', fm(somma(w=>w.comp))],
+          ['Masterclass', fm(somma(w=>w.mc))],
+          ['Ferie', perAct('ferie').length+' gg'],
+          ['Malattia', perAct('malattia').length+' gg'],
+          ['Omesse timbrature', String(perAct('omessa').length)],
+        ];
+        tabella(['Voce','Valore'], righe, {columnStyles:{0:{cellWidth:110},1:{halign:'right',fontStyle:'bold'}}, headStyles:{fillColor:[0,63,78],textColor:255,halign:'left'}});
+      }
+      if(has('settimane')){
+        titolo('Prospetto settimanale');
+        let bal=saldoPrima(monDa);
+        const body=infoW.map(([m,wi])=>{ bal=wi.balDopo; return [settLab(m), fm(wi.tot), fm(wi.obl), fs(wi.c), wi.credito?fm(wi.credito):'—', wi.pagate?fm(wi.pagate):'—', wi.comp?fm(wi.comp):'—', wi.mc?fm(wi.mc):'—', fs(bal)]; });
+        tabella(['Settimana','Presenza','Dovute','Differenza','A credito','Pagate','Riposo comp.','Masterclass','Saldo'], body,
+          {columnStyles:{0:{cellWidth:30},1:{halign:'center'},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'},5:{halign:'center'},6:{halign:'center'},7:{halign:'center'},8:{halign:'right',fontStyle:'bold'}}});
+      }
+      if(has('timbrature')){
+        titolo('Timbrature giornaliere');
+        const body=giorni.map(k=>{
+          const e=DB.entries[k], act=ACTBY[e.act]?ACTBY[e.act].label:(e.act||'');
+          const extra=[]; if(dayMC(e))extra.push('Masterclass '+fm(dayMC(e))); if(dayComp(e))extra.push('riposo comp. '+fm(dayComp(e))); if(ACTBY[e.act]?.beh==='hour'&&e.ph)extra.push('permesso '+fm(e.ph));
+          const note=[...extra, e.note||''].filter(Boolean).join(' · ');
+          return [dCorta(k), gLab(k).slice(0,3), act, e.m1in||'', e.m1out||'', e.m2in||'', e.m2out||'', fm(dayMinutes(k,e)), note];
+        });
+        tabella(['Data','Giorno','Attività','Ingresso','Uscita','Ingr. pom.','Usc. pom.','Ore','Note'], body,
+          {styles:{font:'helvetica',fontSize:8,cellPadding:1.4,lineColor:[200,200,200],lineWidth:0.2,overflow:'linebreak'},
+           columnStyles:{0:{cellWidth:13},1:{cellWidth:11},2:{cellWidth:34},3:{cellWidth:15,halign:'center'},4:{cellWidth:15,halign:'center'},5:{cellWidth:15,halign:'center'},6:{cellWidth:15,halign:'center'},7:{cellWidth:13,halign:'right'},8:{cellWidth:'auto'}}});
+      }
+      const elencoGiorni=(t,act,conOre)=>{
+        titolo(t);
+        const gg=perAct(act);
+        const body=gg.map(k=>{const e=DB.entries[k]; const r=[dIt(k), gLab(k)]; if(conOre)r.push(e.ph?fm(e.ph):'—'); if(e.note)r.push(e.note); else r.push(''); return r;});
+        const head=conOre?['Data','Giorno','Ore','Note']:['Data','Giorno','Note'];
+        if(body.length) testo('Totale: '+gg.length+' '+(gg.length===1?'giorno':'giorni')+(conOre?' · '+fm(gg.reduce((s,k)=>s+(+DB.entries[k].ph||0),0)):''));
+        tabella(head, body, {columnStyles:{0:{cellWidth:26},1:{cellWidth:26}}});
+      };
+      if(has('ferie')) elencoGiorni('Ferie','ferie',false);
+      if(has('malattia')) elencoGiorni('Malattia','malattia',false);
+      if(has('permessi')){
+        titolo('Altri permessi e congedi');
+        const esclusi=new Set(['presenza','straordinario','compensazione','pausa','ferie','malattia','omessa','festa','patronale']);
+        const gg=giorni.filter(k=>!esclusi.has(DB.entries[k].act));
+        const body=gg.map(k=>{const e=DB.entries[k], aDef=ACTBY[e.act]||{}; return [dIt(k), gLab(k), aDef.label||e.act, aDef.beh==='hour'?(e.ph?fm(e.ph):'—'):'1 giorno', e.note||''];});
+        tabella(['Data','Giorno','Tipo','Quantità','Note'], body, {columnStyles:{0:{cellWidth:24},1:{cellWidth:22},2:{cellWidth:50},3:{cellWidth:22,halign:'center'}}});
+      }
+      if(has('masterclass')){
+        titolo('Masterclass');
+        const gg=giorni.filter(k=>dayMC(DB.entries[k])>0);
+        const body=gg.map(k=>[dIt(k), gLab(k), fm(dayMC(DB.entries[k])), DB.entries[k].note||'']);
+        if(body.length){
+          testo('Totale nel periodo: '+fm(somma(w=>w.mc))+(somma(w=>w.mcScartati)?' (più '+fm(somma(w=>w.mcScartati))+' oltre il tetto non autorizzate)':'')+'.');
+        }
+        tabella(['Data','Giorno','Ore','Note'], body, {columnStyles:{0:{cellWidth:26},1:{cellWidth:26},2:{cellWidth:20,halign:'center'}}});
+      }
+      if(has('straordinario')){
+        titolo('Straordinario');
+        const body=infoW.filter(([,wi])=>wi.c>0).map(([m,wi])=>[settLab(m), fs(wi.c), wi.credito?fm(wi.credito):'—', wi.pagate?fm(wi.pagate):'—', (wi.resto-wi.credito-wi.pagate)>0?fm(wi.resto-wi.credito-wi.pagate):'—']);
+        if(body.length) testo('A credito nel saldo: '+fm(somma(w=>w.credito))+' · pagato a parte: '+fm(somma(w=>w.pagate))+'.');
+        tabella(['Settimana','Ore in più','A credito','Pagate','Non autorizzate'], body, {columnStyles:{1:{halign:'center'},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'}}});
+      }
+      if(has('comp')){
+        titolo('Riposo compensativo');
+        const gg=giorni.filter(k=>dayComp(DB.entries[k])>0);
+        const body=gg.map(k=>[dIt(k), gLab(k), fm(dayComp(DB.entries[k])), DB.entries[k].note||'']);
+        if(body.length) testo('Totale nel periodo: '+fm(somma(w=>w.comp))+', scalate dal saldo ore.');
+        tabella(['Data','Giorno','Ore','Note'], body, {columnStyles:{0:{cellWidth:26},1:{cellWidth:26},2:{cellWidth:20,halign:'center'}}});
+      }
+      if(has('omesse')){
+        titolo('Omesse timbrature');
+        const gg=perAct('omessa');
+        const body=gg.map(k=>{const e=DB.entries[k]; return [dIt(k), gLab(k), [e.m1in,e.m1out].filter(Boolean).join(' – ')+(e.m2in||e.m2out?' · '+[e.m2in,e.m2out].filter(Boolean).join(' – '):''), e.note||''];});
+        tabella(['Data','Giorno','Orari dichiarati','Note'], body, {columnStyles:{0:{cellWidth:26},1:{cellWidth:26}}});
+      }
+      /* piè di pagina con numerazione */
+      const n=doc.getNumberOfPages(); const oggi=new Date();
+      for(let i=1;i<=n;i++){
+        doc.setPage(i); doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(130);
+        doc.text('Prospetto presenze · '+nome+' · generato il '+pad(oggi.getDate())+'/'+pad(oggi.getMonth()+1)+'/'+oggi.getFullYear(), M, H-10);
+        doc.text('Pagina '+i+' di '+n, W-M, H-10, {align:'right'});
+      }
+      const nomeFile='prospetto-presenze-'+da+'_'+a+'.pdf';
+      const blob=doc.output('blob');
+      const file=new File([blob], nomeFile, {type:'application/pdf'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file], title:'Prospetto presenze'}); return; }
+        catch(e){ if(e&&e.name==='AbortError')return; }
+      }
+      const url=URL.createObjectURL(blob);
+      const el=document.createElement('a'); el.href=url; el.download=nomeFile; el.target='_blank';
+      document.body.appendChild(el); el.click(); el.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+      toast('PDF pronto');
+    }
+
     /* ---------- Impostazioni ---------- */
     const SD_=['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
     const IDX_=[1,2,3,4,5,6]; /* lun-sab: niente domenica */
@@ -4918,6 +5108,10 @@ import * as repo from './js/repo.js';
           +'<div id="archList" class="hint">Carico l’archivio…</div>'
         +'</div>'
         +'<div class="divider"></div>'
+        +'<h2 class="sec-h">Esportazione per la segreteria</h2>'
+        +'<p class="sec-d">Un PDF con i dati dell’anno, completo o solo con le sezioni che scegli: riepilogo, settimane, timbrature, ferie, malattia, permessi, Masterclass, straordinario, riposo compensativo.</p>'
+        +'<div class="setrow" style="margin:0"><button class="btn" id="btnExpSeg">Esporta per la segreteria</button></div>'
+        +'<div class="divider"></div>'
         +'<h2 class="sec-h">Backup dei dati</h2>'
         +'<p class="sec-d">I dati sono salvati solo su questo dispositivo. Esporta un file di backup e conservalo; potrai reimportarlo se cambi telefono o svuoti il browser.</p>'
         +'<div class="setrow" style="margin:0">'
@@ -5009,6 +5203,7 @@ import * as repo from './js/repo.js';
       /* PDF dell'orario: la libreria si precarica cosi' il tocco apre subito la condivisione */
       caricaJsPDF().catch(()=>{});
       view.querySelectorAll('[data-pdforario]').forEach(b=>b.onclick=()=>{ commitOrario(); pdfOrario(+b.dataset.pdforario); });
+      const bes=document.getElementById('btnExpSeg'); if(bes)bes.onclick=apriEsportaSegreteria;
       view.querySelectorAll('[data-dupperiod]').forEach(b=>b.onclick=()=>{
         const obj=DB.schedulePeriods[+b.dataset.pi];
         commitOrario();
