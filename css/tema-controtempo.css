@@ -401,3 +401,16 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 #richiesteBox .badge-st.st-no{color:var(--yellow-d);background:var(--yellow-wash)}
 #richiesteBox .badge-st{color:var(--ink-soft);background:var(--velo)}
 #richiesteBox .archrow b{font-size:13.5px}
+
+/* ---------- Riepilogo: libro mastro del saldo ore ---------------------- */
+.mov-filtri{padding:4px 16px 10px;border-bottom:1px solid var(--ctm-linea-soft)}
+.mov-filtri .wtag{cursor:pointer;font-family:inherit;border:1px solid transparent;opacity:.75}
+.mov-filtri .wtag b{font-weight:700}
+.mov-filtri .wtag.is-on{opacity:1;border-color:currentColor}
+.wtag--rip{background:var(--velo);color:var(--ink);border-color:var(--ctm-linea)}
+.ios .mov-row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:8px;min-height:46px}
+.mov-k{font-size:13px;font-weight:600;line-height:1.15}
+.mov-k small{display:block;font-weight:400;font-size:10.5px;color:var(--ink-soft)}
+.mov-v{font-weight:700;font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+.mov-v.pos{color:var(--teal)} .mov-v.neg{color:var(--yellow-d)}
+.mov-row .wtag--link{margin-left:0}

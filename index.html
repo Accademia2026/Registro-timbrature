@@ -3343,6 +3343,45 @@ import * as repo from './js/repo.js';
     }
     /* dettaglio di una voce dell'Andamento: le settimane in cui e' successo */
     let riepDett=null;
+    /* libro mastro del saldo ore: un movimento per settimana e per tipo
+       (credito autorizzato, debito, riposo compensativo), con saldo progressivo */
+    let movFiltro='tutti';
+    function movimentiSaldo(){
+      const out=[]; let bal=DB.initialBalanceMin||0;
+      for(const mon of weeksWithData()){
+        const wi=weekCalc(mon,bal);
+        if(wi.c<0){ bal+=wi.c; out.push({mon,tipo:'debito',min:wi.c,bal}); }
+        else if(wi.credito>0){ bal+=wi.credito; out.push({mon,tipo:'credito',min:wi.credito,bal}); }
+        if(wi.comp>0){ bal-=wi.comp; out.push({mon,tipo:'riposo',min:-wi.comp,bal}); }
+      }
+      return out;
+    }
+    function saldoHTML(){
+      const mov=movimentiSaldo();
+      const tot=t=>mov.filter(m=>m.tipo===t).reduce((s,m)=>s+m.min,0);
+      const n=t=>mov.filter(m=>m.tipo===t).length;
+      const chip=(id,cls,lab,val)=>'<button class="wtag wtag--'+cls+(movFiltro===id?' is-on':'')+'" data-movf="'+id+'">'+lab+(val!=null?' <b>'+val+'</b>':'')+'</button>';
+      const filtri='<div class="wtags mov-filtri">'
+        +chip('tutti','mut','Tutti',mov.length)
+        +chip('credito','pos','Crediti',fmtHM(tot('credito'),true))
+        +chip('debito','neg','Debiti',fmtHM(tot('debito'),true))
+        +chip('riposo','rip','Riposi',fmtHM(tot('riposo'),true))
+        +'</div>';
+      const lista=mov.filter(m=>movFiltro==='tutti'||m.tipo===movFiltro).reverse();
+      const LAB={credito:'Credito',debito:'Debito',riposo:'Riposo comp.'};
+      const CLS={credito:'pos',debito:'neg',riposo:'rip'};
+      const righe=lista.length?lista.map(m=>'<div class="row mov-row">'
+          +'<span class="mov-k">'+rangeSettimana(m.mon)+'<small>saldo '+fmtHM(m.bal,true)+'</small></span>'
+          +'<span class="wtag wtag--'+CLS[m.tipo]+'">'+LAB[m.tipo]+'</span>'
+          +'<span class="mov-v '+(m.min<0?'neg':'pos')+'">'+fmtHM(m.min,true)+'</span>'
+          +'<button class="wtag wtag--link" data-openweek="'+m.mon+'">Apri ›</button>'
+        +'</div>').join('')
+        :'<div class="row"><span class="row__label muted">Nessun movimento'+(movFiltro!=='tutti'?' di questo tipo':'')+'.</span></div>';
+      return '<div class="group-header">Saldo ore: movimenti</div><div class="group">'
+        +'<div class="row" style="align-items:flex-end;padding-top:12px;padding-bottom:10px"><div><div class="foot muted">Saldo iniziale '+fmtHM(DB.initialBalanceMin||0,true)+' · '+n('credito')+' crediti · '+n('debito')+' debiti · '+n('riposo')+' riposi</div></div></div>'
+        +filtri+righe+'</div>'
+        +'<p class="group-note">Credito = straordinario autorizzato a credito. Debito = settimana sotto le ore dovute. Riposo = ore di riposo compensativo prese dal saldo. Il saldo indicato è quello raggiunto dopo il movimento.</p>';
+    }
     function dettaglioHTML(key){
       const wks=weeksWithData(), righe=[];
       const riga=(mon,val,cls)=>'<div class="row dett-row"><span class="row__label">'+rangeSettimana(mon)+'</span><span class="row__value '+(cls||'')+'">'+val+'</span><button class="wtag wtag--link" data-openweek="'+mon+'">Apri ›</button></div>';
@@ -3431,6 +3470,7 @@ import * as repo from './js/repo.js';
             +'<div class="row row--tap" data-dett="omessa"><span class="row__label">Omesse timbrature</span><span class="row__value '+(omessaCount()?'neg':'')+'">'+omessaCount()+'</span></div>'
             +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza ordinaria e straordinario a credito; il riposo compensativo lo scala. Masterclass, straordinario pagato e studio restano a parte.</p>'
           +'</div></div>'
+          +'<div id="saldoBox">'+saldoHTML()+'</div>'
           +'<div><div class="group-header">'+(ultima?'Ultima settimana':'Settimane')+'</div><div class="group">'+settimane+'</div>'
             +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Le etichette raccontano cosa \u00e8 successo.</p></div>'
         +'</div>'
@@ -3453,6 +3493,13 @@ import * as repo from './js/repo.js';
       };
       view.querySelectorAll('.row--tap').forEach(r=>r.onclick=()=>{riepDett=(riepDett===r.dataset.dett)?null:r.dataset.dett; apriDett();});
       apriDett();
+      /* libro mastro del saldo: filtri senza ridisegnare tutta la pagina */
+      const bindSaldo=()=>{
+        const box=document.getElementById('saldoBox'); if(!box)return;
+        box.querySelectorAll('[data-movf]').forEach(b=>b.onclick=()=>{movFiltro=b.dataset.movf; box.innerHTML=saldoHTML(); bindSaldo();});
+        box.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
+      };
+      bindSaldo();
       view.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
       const btn=document.getElementById('btnTimbra');
       if(btn) btn.onclick=doTimbra;
