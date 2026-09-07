@@ -99,6 +99,7 @@ export async function loadAll() {
   const mapPeriodi = (tipo) => {
     const list = periodi.filter((r) => r.tipo === tipo).map((r) => ({
       from: r.valido_dal || '',
+      to: r.valido_al || '',
       slots: r.slots || {},
       schedule: scheduleFromSlots(r.slots),
     }));
@@ -216,7 +217,7 @@ export function savePeriodi(tipo, lista) {
   debounced('periodi:' + tipo, async () => {
     const del = await supabase.from('periodi').delete().eq('tipo', tipo);
     if (del.error) return onError('salvataggio periodi', del);
-    const rows = lista.map((p) => ({ tipo, valido_dal: orNull(p.from), slots: p.slots || {} }));
+    const rows = lista.map((p) => ({ tipo, valido_dal: orNull(p.from), valido_al: orNull(p.to), slots: p.slots || {} }));
     if (rows.length) {
       const ins = await supabase.from('periodi').insert(rows);
       if (ins.error) onError('salvataggio periodi', ins);
@@ -376,8 +377,8 @@ export async function replaceAll(DB) {
   if (timRows.length) check('import timbrature', await supabase.from('timbrature').insert(timRows));
 
   const perRows = [
-    ...(DB.schedulePeriods || []).map((p) => ({ tipo: 'presenza', valido_dal: orNull(p.from), slots: p.slots || {} })),
-    ...(DB.studyPeriods || []).map((p) => ({ tipo: 'studio', valido_dal: orNull(p.from), slots: p.slots || {} })),
+    ...(DB.schedulePeriods || []).map((p) => ({ tipo: 'presenza', valido_dal: orNull(p.from), valido_al: orNull(p.to), slots: p.slots || {} })),
+    ...(DB.studyPeriods || []).map((p) => ({ tipo: 'studio', valido_dal: orNull(p.from), valido_al: orNull(p.to), slots: p.slots || {} })),
   ];
   if (perRows.length) check('import periodi', await supabase.from('periodi').insert(perRows));
 
