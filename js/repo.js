@@ -215,12 +215,20 @@ export function saveGiorno(dateISO, entry, rimosso) {
 /** Orari a periodi: sostituisce tutte le righe del tipo (poche righe). */
 export function savePeriodi(tipo, lista) {
   debounced('periodi:' + tipo, async () => {
-    const del = await supabase.from('periodi').delete().eq('tipo', tipo);
-    if (del.error) return onError('salvataggio periodi', del);
+    /* ordine sicuro: PRIMA si inseriscono le righe nuove, POI si tolgono le
+       vecchie. Se l'inserimento fallisce (rete, colonna mancante...) le righe
+       vecchie restano intatte: mai piu' un orario perso a meta' salvataggio. */
+    const vecchie = await supabase.from('periodi').select('id').eq('tipo', tipo);
+    if (vecchie.error) return onError('salvataggio periodi', vecchie);
+    const idVecchi = (vecchie.data || []).map((r) => r.id);
     const rows = lista.map((p) => ({ tipo, valido_dal: orNull(p.from), valido_al: orNull(p.to), slots: p.slots || {} }));
     if (rows.length) {
       const ins = await supabase.from('periodi').insert(rows);
-      if (ins.error) onError('salvataggio periodi', ins);
+      if (ins.error) return onError('salvataggio periodi', ins);
+    }
+    if (idVecchi.length) {
+      const del = await supabase.from('periodi').delete().in('id', idVecchi);
+      if (del.error) onError('salvataggio periodi', del);
     }
   });
 }
@@ -228,8 +236,7 @@ export function savePeriodi(tipo, lista) {
 /** Diritti/limiti permessi: sostituisce l'elenco intero (≈14 righe). */
 export function saveDiritti(entitlements) {
   debounced('diritti', async () => {
-    const del = await supabase.from('diritti_permessi').delete().eq('user_id', await uid());
-    if (del.error) return onError('salvataggio diritti', del);
+    /* ordine sicuro: upsert delle voci, poi rimozione di quelle non piu' presenti */
     const rows = entitlements.map((e, i) => ({
       tipo: e.id,
       etichetta: e.label,
@@ -239,8 +246,16 @@ export function saveDiritti(entitlements) {
       ordine: i,
     }));
     if (rows.length) {
-      const ins = await supabase.from('diritti_permessi').insert(rows);
-      if (ins.error) onError('salvataggio diritti', ins);
+      const ins = await supabase.from('diritti_permessi').upsert(rows, { onConflict: 'user_id,tipo' });
+      if (ins.error) return onError('salvataggio diritti', ins);
+    }
+    const attuali = await supabase.from('diritti_permessi').select('tipo');
+    if (attuali.error) return onError('salvataggio diritti', attuali);
+    const tenere = new Set(rows.map((r) => r.tipo));
+    const rimuovere = (attuali.data || []).map((r) => r.tipo).filter((t) => !tenere.has(t));
+    if (rimuovere.length) {
+      const del = await supabase.from('diritti_permessi').delete().in('tipo', rimuovere);
+      if (del.error) onError('salvataggio diritti', del);
     }
   });
 }
