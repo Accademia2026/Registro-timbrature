@@ -392,3 +392,12 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 .chk{display:flex;align-items:center;gap:12px;min-height:38px;font-size:14px;cursor:pointer;border-top:1px solid var(--ctm-linea-soft)}
 .chk:first-child{border-top:0}
 .chk input{width:20px;height:20px;accent-color:var(--teal);flex:none;margin:0}
+
+/* campi del modulo nascosti via attributo hidden */
+.mfield[hidden],.chklist[hidden]{display:none}
+
+/* stato delle richieste inviate */
+#richiesteBox .badge-st.st-ok{color:var(--teal);background:var(--teal-wash)}
+#richiesteBox .badge-st.st-no{color:var(--yellow-d);background:var(--yellow-wash)}
+#richiesteBox .badge-st{color:var(--ink-soft);background:var(--velo)}
+#richiesteBox .archrow b{font-size:13.5px}

@@ -309,6 +309,29 @@ export async function deleteArchivio(id) {
   check('annullamento archivio', await supabase.from('archivi').delete().eq('id', id));
 }
 
+/* ============================================================ richieste
+   Storico dei moduli inviati alla segreteria (tabella richieste, script 06). */
+export async function listRichieste() {
+  // come per gli archivi: se la tabella manca, la sezione lo dice da sé
+  const { data, error } = await supabase.from('richieste')
+    .select('id,tipo,dal,al,stato,dati,creata_il')
+    .order('creata_il', { ascending: false });
+  if (error) throw error;
+  return (data || []).map((r) => ({ ...r, id: String(r.id) }));
+}
+export async function insertRichiesta(r) {
+  const res = await supabase.from('richieste').insert({
+    tipo: r.tipo, dal: orNull(r.dal), al: orNull(r.al), dati: r.dati || {},
+  }).select('id').single();
+  return String(check('salvataggio richiesta', res).id);
+}
+export async function setStatoRichiesta(id, stato) {
+  check('aggiornamento richiesta', await supabase.from('richieste').update({ stato }).eq('id', id));
+}
+export async function deleteRichiesta(id) {
+  check('eliminazione richiesta', await supabase.from('richieste').delete().eq('id', id));
+}
+
 /** Azzera solo le giornate: timbrature (entries+skipDays) e autorizzazioni. */
 export async function clearTimbrature() {
   const u = await uid();

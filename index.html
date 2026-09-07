@@ -4431,11 +4431,16 @@ import * as repo from './js/repo.js';
       view.innerHTML=
         '<h2 class="sec-h">Monte permessi e congedi</h2>'
         +'<p class="sec-d">Il fruito si aggiorna da solo in base alle attività registrate. Le ferie consumano prima quelle dell’anno precedente, poi quelle in corso. Tocca una voce per vedere quando l’hai usata. I limiti si modificano in Impostazioni.</p>'
+        +'<div class="setrow" style="margin:0 0 10px;gap:8px"><button class="btn" id="btnRichiesta">Richiedi ferie o permesso…</button><button class="btn ghost" id="btnRiposo">Richiedi riposo compensativo…</button></div>'
+        +'<div class="subh" style="margin:6px 0 2px">Richieste inviate</div><div id="richiesteBox" class="sch-list" style="margin-bottom:16px"><p class="hint" style="margin:6px 0 0">Caricamento…</p></div>'
         +'<div class="perm-grid">'+cards+'</div>'
         +'<div class="divider"></div>'
         +'<div class="perm" data-perm="__omesse" style="max-width:340px;cursor:pointer"><div class="top"><span class="name">Omesse timbrature</span><span class="unit">conteggio</span></div>'
           +'<div class="nums"><span>registrate nell’anno</span><span class="r mono">'+omessaCount()+'</span></div></div>';
       view.querySelectorAll('[data-perm]').forEach(c=>c.onclick=()=>schedaPermesso(c.dataset.perm));
+      const br=document.getElementById('btnRichiesta'); if(br)br.onclick=()=>apriRichiesta();
+      const brs=document.getElementById('btnRiposo'); if(brs)brs.onclick=apriRiposo;
+      renderRichieste();
     }
     /* scheda di un permesso: quando e quanto e' stato usato */
     function schedaPermesso(entId){
@@ -4672,6 +4677,279 @@ import * as repo from './js/repo.js';
       document.body.appendChild(el); el.click(); el.remove();
       setTimeout(()=>URL.revokeObjectURL(url),60000);
       toast('PDF pronto');
+    }
+
+    /* ---------- Modulo di richiesta ferie / permesso (replica del modulo del Conservatorio) ---------- */
+    const TIPI_RICHIESTA=[
+      ['ferie_corr','Ferie relative al corrente Anno Accademico'],
+      ['ferie_prec','Ferie maturate e non godute nel precedente Anno Accademico'],
+      ['festivita','Festività previste dalla Legge n. 937 del 23 dicembre 1977'],
+      ['permesso','Permesso retribuito'],
+      ['congedo','Congedo parentale'],
+      ['malattia','Malattia (ricovero / post ricovero)'],
+      ['altro','Altro previsto dalla normativa vigente'],
+    ];
+    const SOTTO_PERMESSO=[['concorso','partecipazione ad un concorso/esame'],['lutto','lutto familiare'],['matrimonio','matrimonio'],['personali','motivi personali/familiari']];
+    function giorniLavorativi(da,a){
+      let n=0; for(let d=parseISO(da); iso(d)<=a; d=addDays(d,1)){ if(expectedFor(iso(d))>0)n++; }
+      return n;
+    }
+    function apriRichiesta(tipoIniziale){
+      let nome='', qual=''; try{nome=localStorage.getItem('ctm:nome')||''; qual=localStorage.getItem('ctm:qualifica')||'';}catch(_){}
+      const oggi=iso(new Date());
+      const tipo0=tipoIniziale||'ferie_corr';
+      modalBg.innerHTML='<div class="modal"><h3>Richiesta ferie / permesso</h3><div class="mbody">'
+        +'<p class="hint" style="margin:0">Compila e crea il modulo del Conservatorio già riempito, da inviare al Direttore.</p>'
+        +'<div class="mrow"><div class="mfield"><label>Nome e cognome</label><input type="text" id="rqNome" value="'+esc(nome)+'"></div><div class="mfield"><label>Qualifica</label><input type="text" id="rqQual" value="'+esc(qual)+'" placeholder="es. Assistente"></div></div>'
+        +'<div class="mrow"><div class="mfield"><label>Dal</label><input type="date" id="rqDa" value="'+oggi+'"></div><div class="mfield"><label>Al</label><input type="date" id="rqA" value="'+oggi+'"></div></div>'
+        +'<div class="mfield"><label>Complessivi (n. gg.)</label><input type="text" id="rqGg" value="'+giorniLavorativi(oggi,oggi)+'" placeholder="es. 2 oppure 1 (dalle 9 alle 12)"></div>'
+        +'<div class="mfield"><label>Tipo</label><div class="chklist">'+TIPI_RICHIESTA.map(([id,lab])=>'<label class="chk"><input type="radio" name="rqTipo" value="'+id+'" '+(id===tipo0?'checked':'')+'><span>'+esc(lab)+'</span></label>').join('')+'</div></div>'
+        +'<div class="mfield" id="rqSottoBox" hidden><label>Permesso retribuito per</label><div class="chklist">'+SOTTO_PERMESSO.map(([id,lab],i)=>'<label class="chk"><input type="radio" name="rqSotto" value="'+id+'" '+(i===3?'checked':'')+'><span>'+esc(lab)+'</span></label>').join('')+'</div></div>'
+        +'<div class="mfield" id="rqTestoBox" hidden><label id="rqTestoLab">Motivo</label><input type="text" id="rqTesto" placeholder=""></div>'
+        +'</div><div class="mfoot"><button class="ilink" id="rqAnnulla">Annulla</button><span class="spacer"></span><button class="btn" id="rqCrea">Crea modulo</button></div></div>';
+      modalBg.classList.add('show');
+      caricaJsPDF().catch(()=>{});
+      const q=id=>document.getElementById(id);
+      let ggManuale=false;
+      const aggiornaGg=()=>{ if(ggManuale)return; const d1=q('rqDa').value,d2=q('rqA').value; if(d1&&d2&&d1<=d2)q('rqGg').value=String(giorniLavorativi(d1,d2)); };
+      q('rqDa').onchange=()=>{ if(q('rqA').value<q('rqDa').value)q('rqA').value=q('rqDa').value; aggiornaGg(); };
+      q('rqA').onchange=aggiornaGg;
+      q('rqGg').oninput=()=>{ggManuale=true;};
+      const aggiornaTipo=()=>{
+        const t=modalBg.querySelector('[name="rqTipo"]:checked').value;
+        q('rqSottoBox').hidden=t!=='permesso';
+        const sotto=t==='permesso'?modalBg.querySelector('[name="rqSotto"]:checked').value:'';
+        const serveTesto=t==='congedo'||t==='altro'||(t==='permesso'&&sotto==='personali');
+        q('rqTestoBox').hidden=!serveTesto;
+        q('rqTestoLab').textContent=t==='congedo'?'Congedo parentale (specificare)':(t==='altro'?'Specificare':'Motivo dell’assenza (obbligatorio: art. 71 D.P.R. 445/2000)');
+      };
+      modalBg.querySelectorAll('[name="rqTipo"],[name="rqSotto"]').forEach(r=>r.onchange=aggiornaTipo);
+      aggiornaTipo();
+      q('rqAnnulla').onclick=closeModal;
+      q('rqCrea').onclick=async()=>{
+        const dati={
+          nome:q('rqNome').value.trim(), qual:q('rqQual').value.trim(),
+          da:q('rqDa').value, a:q('rqA').value, gg:q('rqGg').value.trim(),
+          tipo:modalBg.querySelector('[name="rqTipo"]:checked').value,
+          sotto:modalBg.querySelector('[name="rqSotto"]:checked').value,
+          testo:q('rqTesto').value.trim(),
+        };
+        if(!dati.nome){toast('Serve il nome');return;}
+        if(!dati.da||!dati.a||dati.da>dati.a){toast('Controlla le date');return;}
+        if(!q('rqTestoBox').hidden&&!dati.testo){toast('Serve la specifica richiesta dal modulo');return;}
+        try{localStorage.setItem('ctm:nome',dati.nome); localStorage.setItem('ctm:qualifica',dati.qual);}catch(_){}
+        const btn=q('rqCrea'); btn.disabled=true; btn.textContent='Creazione…';
+        try{ await pdfRichiesta(dati); await registraRichiesta('ferie_permesso', dati.da, dati.a, dati); closeModal(); }
+        catch(e){ toast('Modulo non creato: '+(e&&e.message||'errore')); btn.disabled=false; btn.textContent='Crea modulo'; }
+      };
+    }
+    async function pdfRichiesta(d){
+      try{ await caricaJsPDF(); }catch(_){ throw new Error('serve la connessione'); }
+      const {jsPDF}=window.jspdf;
+      const doc=new jsPDF({unit:'mm',format:'a4'});
+      const W=doc.internal.pageSize.getWidth(), M=25, R=W-M;
+      const norm=(s)=>{doc.setFont('helvetica','normal');doc.setFontSize(s||10.5);};
+      const bold=(s)=>{doc.setFont('helvetica','bold');doc.setFontSize(s||10.5);};
+      const riga=(x1,y,x2)=>{doc.setDrawColor(60);doc.setLineWidth(0.25);doc.line(x1,y,x2,y);};
+      /* valore scritto sopra una riga di compilazione */
+      const campo=(x,y,w,val,centra)=>{ riga(x,y+0.8,x+w); if(val){bold(10.5); doc.text(String(val), centra?x+w/2:x+2, y-0.6, centra?{align:'center'}:undefined);} norm(); };
+      const box=(x,y,on)=>{ doc.setDrawColor(40); doc.setLineWidth(0.35); doc.rect(x,y-3.6,4.2,4.2); if(on){ doc.setLineWidth(0.6); doc.line(x+0.8,y-2.8,x+3.4,y-0.2); doc.line(x+3.4,y-2.8,x+0.8,y-0.2); } };
+      let y=30;
+      norm(10.5); doc.text('Al direttore del Conservatorio di Musica', R, y, {align:'right'}); y+=5.5;
+      doc.text('“N. Piccinni” di Bari', R, y, {align:'right'}); y+=5.5;
+      doc.setTextColor(0,0,160); doc.text('direttore@consba.it', R, y, {align:'right'}); doc.setTextColor(0);
+      y+=16;
+      norm(); doc.text('Il/La sottoscritto/a', M, y); campo(M+34, y, 95, d.nome); doc.text(', in servizio presso codesto', M+131, y);
+      y+=8; doc.text('Conservatorio con la qualifica di', M, y); campo(M+61, y, 80, d.qual);
+      y+=12; bold(12); doc.text('CHIEDE / COMUNICA', W/2, y, {align:'center'});
+      y+=11; norm(); doc.text('Alla S. V. di usufruire per il periodo dal', M, y); campo(M+66, y, 36, dataItFull(d.da), true); doc.text('al', M+106, y); campo(M+111, y, 36, dataItFull(d.a), true);
+      y+=8; doc.text('di complessivi n. gg.', M, y); campo(M+36, y, 30, d.gg, true); doc.text('di :', M+69, y);
+      y+=12;
+      const voce=(on,titolo,desc)=>{ box(M,y,on); bold(); doc.text(titolo, M+9, y); if(desc){norm(); doc.text(desc, M+44, y);} };
+      voce(d.tipo==='ferie_corr','FERIE','relative al corrente Anno Accademico'); y+=9;
+      voce(d.tipo==='ferie_prec','FERIE','maturate e non godute nel precedente Anno Accademico'); y+=9;
+      voce(d.tipo==='festivita','FESTIVITA’','previste dalla Legge n. 937 del 23 dicembre 1977'); y+=9;
+      voce(d.tipo==='permesso','PERMESSO RETRIBUITO','');
+      SOTTO_PERMESSO.forEach(([id,lab])=>{ box(M+62,y,d.tipo==='permesso'&&d.sotto===id); norm(); doc.text(lab, M+70, y); y+=5.5; });
+      doc.setFont('helvetica','italic'); doc.setFontSize(7.5);
+      doc.text(doc.splitTextToSize('(specificare debitamente il motivo dell’assenza nonché tutti gli elementi atti a consentire gli eventuali controlli di cui all’art. 71 del D.P.R. 445/2000)', R-(M+70)), M+70, y-1);
+      y+=8;
+      if(d.tipo==='permesso'&&d.sotto==='personali'&&d.testo){ norm(9.5); const r=doc.splitTextToSize('Motivo: '+d.testo, R-(M+70)); doc.text(r, M+70, y); y+=r.length*4.5+2; }
+      y+=4;
+      voce(d.tipo==='congedo','CONGEDO PARENTALE',''); campo(M+48, y, R-(M+48), d.tipo==='congedo'?d.testo:''); y+=10;
+      voce(d.tipo==='malattia','MALATTIA','(Ricovero/post ricovero)'); y+=10;
+      voce(d.tipo==='altro','ALTRO previsto dalla normativa vigente',''); campo(M+77, y, R-(M+77), d.tipo==='altro'?d.testo:''); y+=7; riga(M+9,y+0.8,R); y+=14;
+      const oggi=new Date();
+      norm(); doc.text('Bari, lì', M, y); campo(M+13, y, 48, pad(oggi.getDate())+'/'+pad(oggi.getMonth()+1)+'/'+oggi.getFullYear(), true);
+      doc.text('Con osservanza', R, y, {align:'right'});
+      y+=12; riga(R-45, y, R); norm(9); doc.text(d.nome, R-22.5, y+4.5, {align:'center'});
+      const etTipo={ferie_corr:'ferie',ferie_prec:'ferie-anno-prec',festivita:'festivita',permesso:'permesso',congedo:'congedo',malattia:'malattia',altro:'richiesta'}[d.tipo]||'richiesta';
+      const nomeFile='richiesta-'+etTipo+'-'+d.da+(d.a!==d.da?'_'+d.a:'')+'.pdf';
+      const blob=doc.output('blob');
+      await copiaEmailSegreteria();
+      const file=new File([blob], nomeFile, {type:'application/pdf'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file], title:'Richiesta '+etTipo, text:'A: '+EMAIL_SEGRETERIA}); return; }
+        catch(e){ if(e&&e.name==='AbortError')return; }
+      }
+      const url=URL.createObjectURL(blob);
+      const el=document.createElement('a'); el.href=url; el.download=nomeFile; el.target='_blank';
+      document.body.appendChild(el); el.click(); el.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+      toast('Modulo pronto · indirizzo '+EMAIL_SEGRETERIA+' copiato');
+    }
+
+    /* ---------- invio e storico delle richieste ---------- */
+    const EMAIL_SEGRETERIA='gestionepersonale@consba.it';
+    async function copiaEmailSegreteria(){ try{ await navigator.clipboard.writeText(EMAIL_SEGRETERIA); }catch(_){} }
+    const TIPO_RICH_LABEL={ferie_permesso:'Ferie / permesso', riposo:'Riposo compensativo'};
+    const STATO_LABEL={inviata:'Inviata', autorizzata:'Autorizzata', rifiutata:'Rifiutata'};
+    function descRichiesta(r){
+      const d=r.dati||{};
+      if(r.tipo==='riposo') return 'Riposo compensativo il '+(r.dal?dataItFull(r.dal):'')+(d.quanto?' · '+d.quanto:'');
+      const t=(TIPI_RICHIESTA.find(x=>x[0]===d.tipo)||[])[1]||'Richiesta';
+      const sotto=d.tipo==='permesso'?(' · '+((SOTTO_PERMESSO.find(x=>x[0]===d.sotto)||[])[1]||'')):'';
+      const per=r.dal?(r.dal===r.al?dataItFull(r.dal):dataItFull(r.dal)+' – '+dataItFull(r.al)):'';
+      return t+sotto+(per?' · '+per:'')+(d.gg?' · gg '+d.gg:'');
+    }
+    async function registraRichiesta(tipo,dal,al,dati){
+      try{ await repo.insertRichiesta({tipo,dal,al,dati}); renderRichieste(); }
+      catch(_){ /* la tabella potrebbe mancare: il modulo e' comunque pronto */ }
+    }
+    async function renderRichieste(){
+      const box=document.getElementById('richiesteBox'); if(!box)return;
+      let rows;
+      try{ rows=await repo.listRichieste(); }
+      catch(_){ box.innerHTML='<p class="hint" style="margin:6px 0 0">Storico non disponibile (tabella richieste assente o senza connessione).</p>'; return; }
+      if(!rows.length){ box.innerHTML='<p class="hint" style="margin:6px 0 0">Nessuna richiesta ancora creata.</p>'; return; }
+      box.innerHTML=rows.map(r=>'<div class="archrow" data-rich="'+r.id+'" style="cursor:pointer">'
+        +'<span class="badge-st'+(r.stato==='autorizzata'?' st-ok':(r.stato==='rifiutata'?' st-no':''))+'">'+(STATO_LABEL[r.stato]||r.stato)+'</span>'
+        +'<b>'+esc(TIPO_RICH_LABEL[r.tipo]||r.tipo)+'</b>'
+        +'<span class="muted" style="flex:1 1 100%">'+esc(descRichiesta(r))+' · creata il '+new Date(r.creata_il).toLocaleDateString('it-IT')+'</span>'
+        +'</div>').join('');
+      box.querySelectorAll('[data-rich]').forEach(el=>el.onclick=()=>schedaRichiesta(rows.find(x=>x.id===el.dataset.rich)));
+    }
+    function schedaRichiesta(r){
+      if(!r)return;
+      const puoInserire=r.stato==='autorizzata'&&actPerRichiesta(r)!=null;
+      modalBg.innerHTML='<div class="modal"><h3>'+esc(TIPO_RICH_LABEL[r.tipo]||r.tipo)+'</h3><div class="mbody">'
+        +'<p style="margin:0">'+esc(descRichiesta(r))+'</p>'
+        +'<p class="hint" style="margin:0">Creata il '+new Date(r.creata_il).toLocaleDateString('it-IT')+' · stato: <b>'+(STATO_LABEL[r.stato]||r.stato)+'</b></p>'
+        +'<div class="mfield"><label>Esito della segreteria</label><div class="setrow" style="margin:0;gap:8px">'
+          +'<button class="btn ghost dsm" data-stato="autorizzata">Autorizzata</button><button class="btn ghost dsm" data-stato="rifiutata">Rifiutata</button><button class="btn ghost dsm" data-stato="inviata">In attesa</button></div></div>'
+        +(puoInserire?'<div class="mfield"><label>Registro</label><button class="btn dsm" id="richInserisci">Inserisci le giornate nel registro</button></div>':'')
+        +'<div class="mfield"><label>Modulo</label><div class="setrow" style="margin:0;gap:8px"><button class="btn ghost dsm" id="richPdf">Rigenera PDF</button><a class="btn ghost dsm" id="richMail" href="mailto:'+EMAIL_SEGRETERIA+'?subject='+encodeURIComponent('Richiesta '+(TIPO_RICH_LABEL[r.tipo]||''))+'">Apri Mail</a></div></div>'
+        +'</div><div class="mfoot"><button class="idanger" id="richElimina">Elimina</button><span class="spacer"></span><button class="btn" id="richChiudi">Chiudi</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('richChiudi').onclick=closeModal;
+      modalBg.querySelectorAll('[data-stato]').forEach(b=>b.onclick=async()=>{
+        try{ await repo.setStatoRichiesta(r.id,b.dataset.stato); r.stato=b.dataset.stato; toast('Stato aggiornato'); renderRichieste(); schedaRichiesta(r); }catch(_){}
+      });
+      document.getElementById('richPdf').onclick=async()=>{
+        try{ if(r.tipo==='riposo') await pdfRiposo(r.dati); else await pdfRichiesta(r.dati); }catch(e){ toast('PDF non creato: '+(e&&e.message||'errore')); }
+      };
+      document.getElementById('richElimina').onclick=async()=>{
+        if(!confirm('Eliminare questa richiesta dallo storico?'))return;
+        try{ await repo.deleteRichiesta(r.id); closeModal(); renderRichieste(); }catch(_){}
+      };
+      const ins=document.getElementById('richInserisci'); if(ins)ins.onclick=()=>inserisciRichiesta(r);
+    }
+    /* attivita' del registro corrispondente alla richiesta (null = non inseribile in automatico) */
+    function actPerRichiesta(r){
+      const d=r.dati||{};
+      if(r.tipo==='riposo') return 'compensazione';
+      return {ferie_corr:'ferie', ferie_prec:'ferie', festivita:'fest_soppressa', malattia:'malattia',
+        permesso:{concorso:'esami', lutto:'lutto', matrimonio:'matrimonio', personali:'personali'}[d.sotto]||null}[d.tipo]||null;
+    }
+    function inserisciRichiesta(r){
+      const act=actPerRichiesta(r); if(!act)return;
+      const d=r.dati||{};
+      const giorni=[];
+      if(r.tipo==='riposo'){ if(r.dal)giorni.push(r.dal); }
+      else { for(let x=parseISO(r.dal); iso(x)<=r.al; x=addDays(x,1)){ if(expectedFor(iso(x))>0)giorni.push(iso(x)); } }
+      if(!giorni.length){toast('Nessun giorno lavorativo nel periodo');return;}
+      const occupati=giorni.filter(k=>hasEntry(DB.entries[k]));
+      if(occupati.length&&!confirm(occupati.length+' '+(occupati.length===1?'giornata ha':'giornate hanno')+' già dei dati nel registro: sostituirli?'))return;
+      giorni.forEach(k=>{
+        const e={act};
+        if(act==='compensazione'){ e.ph=expectedFor(k); e.note='riposo compensativo'+(d.quanto?' · '+d.quanto:''); }
+        if(act==='personali'&&d.testo) e.note=d.testo;
+        DB.entries[k]=e; saveDay(k);
+      });
+      refreshChip(); closeModal(); toast(giorni.length+' '+(giorni.length===1?'giornata inserita':'giornate inserite')+' nel registro');
+    }
+
+    /* ---------- Modulo di richiesta riposo compensativo (replica del modulo del Conservatorio) ---------- */
+    function apriRiposo(){
+      let nome=''; try{nome=localStorage.getItem('ctm:nome')||'';}catch(_){}
+      const oggi=iso(new Date());
+      /* suggerimenti: le ultime settimane con straordinario a credito */
+      const sugg=weeksWithData().map(m=>[m,weekInfo(m)]).filter(([,wi])=>wi.credito>0).slice(-4).reverse();
+      const rigaOre=(i,data,ore)=>'<div class="mrow"><div class="mfield"><label>'+(i===0?'Data straordinario':'&nbsp;')+'</label><input type="date" data-rsData="'+i+'" value="'+(data||'')+'"></div><div class="mfield" style="flex:.6"><label>'+(i===0?'Ore effettuate':'&nbsp;')+'</label><input type="text" data-rsOre="'+i+'" value="'+(ore||'')+'" placeholder="es. 2h"></div></div>';
+      const righe=[0,1,2,3].map(i=>{const s=sugg[i]; return rigaOre(i, s?iso(addDays(parseISO(s[0]),3)):'', s?fmtHM(s[1].credito):'');}).join('');
+      modalBg.innerHTML='<div class="modal"><h3>Richiesta riposo compensativo</h3><div class="mbody">'
+        +'<p class="hint" style="margin:0">Le ore di straordinario già a credito vengono proposte; correggi date e ore come servono (la data va indicata per giorno).</p>'
+        +'<div class="mfield"><label>Nome e cognome</label><input type="text" id="rsNome" value="'+esc(nome)+'"></div>'
+        +righe
+        +'<div class="mrow"><div class="mfield"><label>Da fruire in data</label><input type="date" id="rsData" value="'+oggi+'"></div><div class="mfield"><label>Commutate in</label><input type="text" id="rsQuanto" placeholder="es. 1 giorno · 3 ore"></div></div>'
+        +'</div><div class="mfoot"><button class="ilink" id="rsAnnulla">Annulla</button><span class="spacer"></span><button class="btn" id="rsCrea">Crea modulo</button></div></div>';
+      modalBg.classList.add('show');
+      caricaJsPDF().catch(()=>{});
+      document.getElementById('rsAnnulla').onclick=closeModal;
+      document.getElementById('rsCrea').onclick=async()=>{
+        const nm=document.getElementById('rsNome').value.trim();
+        const voci=[0,1,2,3].map(i=>({data:modalBg.querySelector('[data-rsData="'+i+'"]').value, ore:modalBg.querySelector('[data-rsOre="'+i+'"]').value.trim()})).filter(v=>v.data||v.ore);
+        const d={nome:nm, voci, fruizione:document.getElementById('rsData').value, quanto:document.getElementById('rsQuanto').value.trim()};
+        if(!nm){toast('Serve il nome');return;}
+        if(!voci.length){toast('Indica almeno una data di straordinario');return;}
+        if(!d.fruizione){toast('Indica la data di fruizione');return;}
+        try{localStorage.setItem('ctm:nome',nm);}catch(_){}
+        const btn=document.getElementById('rsCrea'); btn.disabled=true; btn.textContent='Creazione…';
+        try{ await pdfRiposo(d); await registraRichiesta('riposo', d.fruizione, d.fruizione, d); closeModal(); }
+        catch(e){ toast('Modulo non creato: '+(e&&e.message||'errore')); btn.disabled=false; btn.textContent='Crea modulo'; }
+      };
+    }
+    async function pdfRiposo(d){
+      try{ await caricaJsPDF(); }catch(_){ throw new Error('serve la connessione'); }
+      const {jsPDF}=window.jspdf;
+      const doc=new jsPDF({unit:'mm',format:'a4'});
+      const W=doc.internal.pageSize.getWidth(), M=25, R=W-M;
+      const norm=(s)=>{doc.setFont('times','normal');doc.setFontSize(s||11);};
+      const bold=(s)=>{doc.setFont('times','bold');doc.setFontSize(s||11);};
+      const riga=(x1,y,x2)=>{doc.setDrawColor(60);doc.setLineWidth(0.25);doc.line(x1,y,x2,y);};
+      const campo=(x,y,w,val,centra)=>{ riga(x,y+0.8,x+w); if(val){bold(11); doc.text(String(val), centra?x+w/2:x+2, y-0.6, centra?{align:'center'}:undefined);} norm(); };
+      const dIt=k=>k?dataItFull(k):'';
+      let y=38;
+      norm(11); doc.text('Al  Sig. Direttore Conservatorio', R, y, {align:'right'}); y+=4.5;
+      norm(8); doc.text('B A R I', R, y, {align:'right'});
+      y+=12; norm(11); doc.text('OGGETTO:  Richiesta riposo compensativo', M, y);
+      y+=14; doc.text('Il/La sottoscritt__', M+10, y); campo(M+42, y, 95, d.nome);
+      y+=9; doc.text('in servizio presso questo Istituto', M, y);
+      y+=10; bold(12); doc.text('C H I E D E', W/2, y, {align:'center'});
+      y+=10; norm(11);
+      const dateStr=d.voci.filter(v=>v.data).map(v=>dIt(v.data)).join(', ');
+      doc.text('che le ore di straordinario prestate in data (*)', M, y); campo(M+84, y, R-(M+84), dateStr.length>34?'vedi elenco (*)':dateStr, true);
+      y+=9; doc.text('siano commutate in', M, y); bold(); doc.text('giorni/ore', M+35, y); norm(); doc.text('di riposo compensativo da fruire  in data :', M+55, y);
+      y+=9; campo(M, y, 60, dIt(d.fruizione), true); if(d.quanto){ norm(10); doc.text('('+d.quanto+')', M+64, y-0.6); }
+      y+=26; norm(11); doc.text('Firma del richiedente', R-15, y, {align:'right'});
+      y+=10; riga(R-70, y, R); norm(9); doc.text(d.nome, R-35, y+4.5, {align:'center'});
+      y+=18; norm(11); doc.text('SI AUTORIZZA:', W/2, y, {align:'center'});
+      y+=24; doc.text('(*)    data          ore effettuate', M, y);
+      y+=9;
+      for(let i=0;i<4;i++){ const v=d.voci[i]||{}; campo(M, y, 32, dIt(v.data), true); campo(M+40, y, 16, v.ore, true); y+=7; }
+      const nomeFile='richiesta-riposo-compensativo-'+d.fruizione+'.pdf';
+      const blob=doc.output('blob');
+      const file=new File([blob], nomeFile, {type:'application/pdf'});
+      await copiaEmailSegreteria();
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        try{ await navigator.share({files:[file], title:'Richiesta riposo compensativo', text:'A: '+EMAIL_SEGRETERIA}); return; }
+        catch(e){ if(e&&e.name==='AbortError')return; }
+      }
+      const url=URL.createObjectURL(blob);
+      const el=document.createElement('a'); el.href=url; el.download=nomeFile; el.target='_blank';
+      document.body.appendChild(el); el.click(); el.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),60000);
+      toast('Modulo pronto · indirizzo '+EMAIL_SEGRETERIA+' copiato');
     }
 
     /* ---------- Impostazioni ---------- */
