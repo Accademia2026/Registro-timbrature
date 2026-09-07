@@ -3359,7 +3359,14 @@ import * as repo from './js/repo.js';
         righe.push('<div class="row dett-row"><span class="row__label">Saldo iniziale</span><span class="row__value">'+fmtHM(bal,true)+'</span></div>');
         wks.forEach(mon=>{const wi=weekCalc(mon,bal); bal=wi.balDopo; if(wi.delta===0)return; righe.push(riga(mon, fmtHM(wi.delta,true)+' <small class="muted">→ '+fmtHM(bal,true)+'</small>', wi.delta<0?'neg':'pos'));});
       }
-      else if(key==='settimane'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.c===0)return; righe.push(riga(mon, fmtHM(wi.c,true)+' <small class="muted">'+fmtHM(wi.tot)+' su '+fmtHM(wi.obl)+'</small>', wi.c<0?'neg':'pos'));}); }
+      else if(key==='settimane'){
+        /* sotto soglia sempre; in eccedenza solo se lo straordinario e' stato autorizzato */
+        wks.forEach(mon=>{
+          const wi=weekInfo(mon), aut=wi.credito+wi.pagate;
+          if(wi.c<0) righe.push(riga(mon, fmtHM(wi.c,true)+' <small class="muted">'+fmtHM(wi.tot)+' su '+fmtHM(wi.obl)+'</small>', 'neg'));
+          else if(wi.c>0&&aut>0) righe.push(riga(mon, fmtHM(aut,true)+' <small class="muted">'+fmtHM(wi.tot)+' su '+fmtHM(wi.obl)+(wi.pagate?' · '+fmtHM(wi.pagate)+' pagate':'')+'</small>', 'pos'));
+        });
+      }
       else if(key==='credito'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.credito>0)righe.push(riga(mon, fmtHM(wi.credito)+' <small class="muted">su '+fmtHM(wi.c,true)+'</small>','pos'));}); }
       else if(key==='pagato'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.pagate>0)righe.push(riga(mon, fmtHM(wi.pagate)));}); }
       else if(key==='comp'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.comp>0)righe.push(riga(mon, fmtHM(wi.comp)));}); }
@@ -3373,7 +3380,7 @@ import * as repo from './js/repo.js';
       const bal=runningBalance();
       const wks=weeksWithData();
       let over=0,under=0;
-      wks.forEach(m=>{const c=weekTotal(m)-obligationForWeek(m); if(c>0)over++;else if(c<0)under++;});
+      wks.forEach(m=>{const wi=weekInfo(m); if(wi.c<0)under++; else if(wi.credito+wi.pagate>0)over++;});
       const fAlloc=ferieAlloc();
       const ferieRes=fAlloc.prevRes+fAlloc.curRes;
       const ferieTot=DB.entitlements.filter(e=>e.id==='ferie'||e.id==='ferie_prec').reduce((a,e)=>a+(+e.total||0),0);
@@ -3410,7 +3417,7 @@ import * as repo from './js/repo.js';
             +'<div class="row row--tap" data-dett="saldo" style="align-items:flex-end;padding-top:14px;padding-bottom:12px"><div><div class="foot muted">Saldo ore complessivo</div>'
               +'<div class="num '+(bal<0?'neg':'pos')+'" style="font-size:var(--t-large);font-weight:600;line-height:1">'+fmtHM(bal,true)+'</div></div>'
               +'<span class="badge '+(bal<0?'badge--neg':'badge--pos')+'">'+(bal<0?'Debito':'Credito')+'</span></div>'
-            +'<div class="row row--tap" data-dett="settimane"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+(wks.length?' <small class="muted">\u00b7 '+over+' in eccedenza \u00b7 '+under+' sotto</small>':'')+'</span></div>'
+            +'<div class="row row--tap" data-dett="settimane"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+(wks.length?' <small class="muted">\u00b7 '+over+' con straordinario \u00b7 '+under+' sotto</small>':'')+'</span></div>'
             +'<div class="row row--tap" data-dett="credito"><span class="row__label">Straordinario a credito</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+authForWeek(m),0))+'</span></div>'
             +'<div class="row row--tap" data-dett="pagato"><span class="row__label">Straordinario pagato</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+pagateForWeek(m),0))+'</span></div>'
             +'<div class="row row--tap" data-dett="comp"><span class="row__label">Riposo compensativo <small class="muted">dal saldo</small></span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekComp(m),0))+'</span></div>'
@@ -3629,7 +3636,7 @@ import * as repo from './js/repo.js';
           +'<div class="card"><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-items:start">'
             +'<div><div class="foot muted">Presenza</div><div class="num sum-v" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(tot)+'</div></div>'
             +'<div><div class="foot muted">Dovute</div><div class="num sum-v" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(obl)+'</div></div>'
-            +'<div><div class="foot muted">Credito</div><div class="num sum-v '+(c<0?'neg':(c>0?'pos':''))+'" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(c,true)+'</div></div>'
+            +'<div><div class="foot muted">Credito</div><div class="num sum-v '+(c<0?'neg':(wi.credito>0?'pos':''))+'" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(c<0?c:wi.credito,true)+'</div></div>'
             +'<div><div class="foot muted">Studio</div><div class="num" id="sumStudio" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(weekStudy(weekCursor))+'</div></div>'
           +'</div>'
           +'<div style="display:flex;align-items:center;gap:12px;margin-top:14px">'
@@ -3719,7 +3726,8 @@ import * as repo from './js/repo.js';
     function recalcWeekLive(el,key,e){
       const obl=obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
       const sums=view.querySelectorAll('.sum-v');
-      if(sums[0]){sums[0].textContent=fmtHM(tot); sums[1].textContent=fmtHM(obl); sums[2].textContent=fmtHM(c,true); sums[2].className='num sum-v '+(c<0?'neg':(c>0?'pos':''));}
+      const wiL=weekInfo(weekCursor), credL=c<0?c:wiL.credito;
+      if(sums[0]){sums[0].textContent=fmtHM(tot); sums[1].textContent=fmtHM(obl); sums[2].textContent=fmtHM(credL,true); sums[2].className='num sum-v '+(c<0?'neg':(credL>0?'pos':''));}
       const st=document.getElementById('sumStudio'); if(st)st.textContent=fmtHM(weekStudy(weekCursor));
       const ex=document.getElementById('sumExtra'); if(ex)ex.innerHTML=extraSettimanaHTML(weekCursor);
       const esEl=view.querySelector('.sum-esito');
