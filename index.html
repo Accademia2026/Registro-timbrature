@@ -3060,11 +3060,7 @@ import * as repo from './js/repo.js';
       const h=Math.floor(min/60),m=min%60;
       return s+h+'h'+(m?pad(m):'00');
     }
-    /* periodo in vigore nella settimana: l'ultimo iniziato; un periodo con
-       fine ("to" = lunedi' dell'ultima settimana) gia' passata viene saltato,
-       cosi' dopo una variazione temporanea torna l'orario precedente */
-    function periodFor(list,monISO){let chosen=list[0];for(const p of list){if(p.from<=monISO){ if(p.to&&p.to<monISO)continue; chosen=p; }else break;}return chosen;}
-    function fineSettimanaISO(monISO){return iso(addDays(parseISO(monISO),6));}
+    function periodFor(list,monISO){let chosen=list[0];for(const p of list){if(p.from<=monISO)chosen=p;else break;}return chosen;}
     function monOf(dISO){return iso(mondayOf(parseISO(dISO)));}
     function scheduleForWeek(mon){return (periodFor(DB.schedulePeriods,mon)||{}).schedule||{};}
     function studyScheduleForWeek(mon){return (periodFor(DB.studyPeriods,mon)||{}).schedule||{};}
@@ -5052,9 +5048,7 @@ import * as repo from './js/repo.js';
       doc.setFontSize(16); doc.text('Comunicazione dell’orario di servizio', M, 32);
       doc.setFont('helvetica','normal'); doc.setFontSize(10.5);
       doc.text('Alla Segreteria del personale', M, 42);
-      const intro=p.to
-        ? 'Il/La sottoscritto/a '+nome+' comunica il proprio orario di servizio dal '+dataItFull(p.from)+' al '+dataItFull(fineSettimanaISO(p.to))+', articolato come segue:'
-        : 'Il/La sottoscritto/a '+nome+' comunica il proprio orario di servizio settimanale, '+decorrenza+', articolato come segue:';
+      const intro='Il/La sottoscritto/a '+nome+' comunica il proprio orario di servizio settimanale, '+decorrenza+', articolato come segue:';
       const introRighe=doc.splitTextToSize(intro, W-2*M);
       doc.text(introRighe, M, 52);
       const y0=52+introRighe.length*5+4;
@@ -5082,7 +5076,7 @@ import * as repo from './js/repo.js';
       doc.text('Bari, '+pad(oggi.getDate())+'/'+pad(oggi.getMonth()+1)+'/'+oggi.getFullYear(), M, y);
       doc.setFontSize(8); doc.setTextColor(130);
       doc.text('Generato con Registro presenze · '+nome, M, doc.internal.pageSize.getHeight()-12);
-      const nomeFile='orario-servizio-'+(p.from?('dal-'+p.from+(p.to?'_al-'+fineSettimanaISO(p.to):'')):'inizio-anno')+'.pdf';
+      const nomeFile='orario-servizio-'+(p.from?('dal-'+p.from):'inizio-anno')+'.pdf';
       const blob=doc.output('blob');
       const file=new File([blob], nomeFile, {type:'application/pdf'});
       if(navigator.canShare&&navigator.canShare({files:[file]})){
@@ -5113,8 +5107,7 @@ import * as repo from './js/repo.js';
       const pick=(list,from)=>{
         const ex=list.find(x=>x.from===from); if(ex)return ex;
         const base=periodFor(list,from||'0000-00-00')||vuoto();
-        const gemello=(list===P?S:P).find(x=>x.from===from);
-        return {from, to:gemello?(gemello.to||''):'', schedule:{...base.schedule}, slots:JSON.parse(JSON.stringify(base.slots||{}))};
+        return {from, schedule:{...base.schedule}, slots:JSON.parse(JSON.stringify(base.slots||{}))};
       };
       DB.schedulePeriods=froms.map(f=>pick(P,f));
       DB.studyPeriods=froms.map(f=>pick(S,f));
@@ -5194,7 +5187,7 @@ import * as repo from './js/repo.js';
         const s=S[pi]||{slots:{}}, aperto=openPer.pres===pi, v=verificaPeriodo(pi);
         let h='<div class="period'+(aperto?' period--open':'')+'">'
           +'<div class="period-tap" data-per-toggle="pres" data-pi="'+pi+'">'
-            +'<span class="period-lbl">'+(pi===0?'Dall’inizio':'Dal '+dataIt(p.from))+(p.to?' al '+dataIt(fineSettimanaISO(p.to)):'')+'</span>'
+            +'<span class="period-lbl">'+(pi===0?'Dall’inizio':'Dal '+dataIt(p.from))+'</span>'
             +'<span class="period-sum mono'+(v.tot===ORE_SETT&&!v.errori.length?'':' neg')+'" data-sumfor="pres-'+pi+'">'+fmtHM(v.tot)+' / 36h</span>'
             +'<span class="per-chev">'+(aperto?'▾':'▸')+'</span>'
           +'</div>';
@@ -5224,8 +5217,6 @@ import * as repo from './js/repo.js';
           h+='<div class="period-body">'
             +'<div class="field" style="margin:2px 0 10px"><label>'+(pi===0?'Valido dall’inizio (settimana del)':'Valido dalla settimana del')+'</label>'
               +'<input type="date" data-k="pres" data-pi="'+pi+'" data-from value="'+p.from+'"></div>'
-            +'<div class="field" style="margin:2px 0 10px"><label>Fino alla settimana del <span class="hint2">(facoltativo: vuoto = fino al prossimo cambio)</span></label>'
-              +'<input type="date" data-k="pres" data-pi="'+pi+'" data-to value="'+(p.to||'')+'"></div>'
             +'<div class="orario-list">'+righe+'</div>'
             +'<div class="orario-foot" data-foot="'+pi+'">'+piedeHTML(pi)+'</div>'
             +'<div class="setrow" style="margin:12px 0 0;gap:8px">'
@@ -5355,12 +5346,6 @@ import * as repo from './js/repo.js';
         const f=i.value?iso(mondayOf(parseISO(i.value))):(pi===0?'':P[pi].from);
         P[pi].from=f; if(S[pi])S[pi].from=f;
       });
-      view.querySelectorAll('input[data-to][data-k="pres"]').forEach(i=>{
-        const pi=+i.dataset.pi; if(!P[pi])return;
-        let t=i.value?iso(mondayOf(parseISO(i.value))):'';
-        if(t&&P[pi].from&&t<P[pi].from)t=P[pi].from;   /* la fine non precede l'inizio */
-        P[pi].to=t; if(S[pi])S[pi].to=t;
-      });
       /* 'mc' scrive mcs/mce dentro le slot di presenza; schedule[] resta la sola presenza ordinaria */
       [['pres','start','end'],['study','start','end'],['mc','mcs','mce']].forEach(([kind,fs,fe])=>{
         const list=kind==='study'?S:P;
@@ -5376,7 +5361,7 @@ import * as repo from './js/repo.js';
       const out=[];
       DB.schedulePeriods.forEach((p,pi)=>{
         const v=verificaPeriodo(pi);
-        if(v.errori.length)out.push((pi===0?'Dall’inizio':'Dal '+p.from)+(p.to?' al '+fineSettimanaISO(p.to):'')+' — '+v.errori[0]);
+        if(v.errori.length)out.push((pi===0?'Dall’inizio':'Dal '+p.from)+' — '+v.errori[0]);
       });
       return out;
     }
