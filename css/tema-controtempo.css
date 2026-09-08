@@ -416,13 +416,9 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 .mov-row .wtag--link{margin-left:0}
 
 /* ---------- Riepilogo: sezioni apribili (Andamento, Movimenti) ---------- */
-.ios .gh-tap{display:flex;align-items:center;gap:10px;cursor:pointer;-webkit-tap-highlight-color:transparent;text-transform:none}
-.ios .gh-tap>span:first-child{text-transform:uppercase}
-.gh-sum{margin-left:auto;font-size:12.5px;font-weight:500;color:var(--ink-soft);text-transform:none;letter-spacing:0;white-space:nowrap}
-.gh-sum b{font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
-.gh-sum b.pos{color:var(--teal)} .gh-sum b.neg{color:var(--yellow-d)}
-.gh-tap.is-open .gh-sum{display:none}
-.gh-chev::before{content:"\203A";display:inline-block;color:var(--ink-soft);transition:transform .15s;font-size:16px;line-height:1}
-.gh-tap.is-open .gh-chev::before{transform:rotate(90deg)}
-.gh-tap.is-open .gh-chev{margin-left:auto}
 .gh-body[hidden]{display:none}
+.ios .row.gh-tap .row__value b{font-variant-numeric:tabular-nums}
+.ios .row.gh-tap .row__value b.pos{color:var(--teal)} .ios .row.gh-tap .row__value b.neg{color:var(--yellow-d)}
+.gh-sum b{font-weight:700;font-variant-numeric:tabular-nums}
+.gh-sum b.pos{color:var(--teal)} .gh-sum b.neg{color:var(--yellow-d)}
+.gh-sum{white-space:nowrap}

@@ -3386,11 +3386,13 @@ import * as repo from './js/repo.js';
         :'<div class="row"><span class="row__label muted">Nessun movimento'+(movFiltro!=='tutti'?' di questo tipo':'')+'.</span></div>';
       const aperto=riepAperti.mov;
       const sintesi='<span class="gh-sum"><b class="pos">'+fmtHM(tot('credito'),true)+'</b> · <b class="neg">'+fmtHM(tot('debito'),true)+'</b> · <b>'+fmtHM(tot('riposo'),true)+'</b></span>';
-      return '<div class="group-header gh-tap'+(aperto?' is-open':'')+'" data-sez="mov"><span>Saldo ore: movimenti</span>'+sintesi+'<span class="gh-chev"></span></div>'
-        +'<div class="gh-body"'+(aperto?'':' hidden')+'><div class="group">'
+      return '<div class="group-header">Saldo ore: movimenti</div><div class="group">'
+        +'<div class="row row--tap gh-tap'+(aperto?' row--open':'')+'" data-sez="mov"><span class="row__label">Movimenti</span><span class="row__value">'+sintesi+'</span></div>'
+        +'<div class="gh-body"'+(aperto?'':' hidden')+'>'
         +'<div class="row" style="align-items:flex-end;padding-top:12px;padding-bottom:10px"><div><div class="foot muted">Saldo iniziale '+fmtHM(DB.initialBalanceMin||0,true)+' · '+n('credito')+' crediti · '+n('debito')+' debiti · '+n('riposo')+' riposi</div></div></div>'
-        +filtri+righe+'</div>'
-        +'<p class="group-note">Credito = straordinario autorizzato a credito. Debito = settimana sotto le ore dovute. Riposo = ore di riposo compensativo prese dal saldo. Il saldo indicato è quello raggiunto dopo il movimento.</p></div>';
+        +filtri+righe
+        +'<p class="group-note" style="margin:8px 16px 10px">Credito = straordinario autorizzato a credito. Debito = settimana sotto le ore dovute. Riposo = ore di riposo compensativo prese dal saldo. Il saldo indicato è quello raggiunto dopo il movimento.</p>'
+        +'</div></div>';
     }
     function dettaglioHTML(key){
       const wks=weeksWithData(), righe=[];
@@ -3466,11 +3468,9 @@ import * as repo from './js/repo.js';
               +'<button class="btn btn--filled btn--pill" id="btnTimbra" '+(slot?'':'disabled')+'>'+(slot?('Timbra '+slot.l.toLowerCase()):'Giornata completa')+'</button>'
             +'</div>'
           +'</div></div>'
-          +'<div><div class="group-header gh-tap'+(riepAperti.andamento?' is-open':'')+'" data-sez="andamento"><span>Andamento</span><span class="gh-sum"><b class="'+(bal<0?'neg':'pos')+'">'+fmtHM(bal,true)+'</b> · '+wks.length+' sett.</span><span class="gh-chev"></span></div>'
-          +'<div class="gh-body"'+(riepAperti.andamento?'':' hidden')+'><div class="group">'
-            +'<div class="row row--tap" data-dett="saldo" style="align-items:flex-end;padding-top:14px;padding-bottom:12px"><div><div class="foot muted">Saldo ore complessivo</div>'
-              +'<div class="num '+(bal<0?'neg':'pos')+'" style="font-size:var(--t-large);font-weight:600;line-height:1">'+fmtHM(bal,true)+'</div></div>'
-              +'<span class="badge '+(bal<0?'badge--neg':'badge--pos')+'">'+(bal<0?'Debito':'Credito')+'</span></div>'
+          +'<div><div class="group-header">Andamento</div><div class="group">'
+            +'<div class="row row--tap gh-tap'+(riepAperti.andamento?' row--open':'')+'" data-sez="andamento"><span class="row__label">Saldo ore complessivo</span><span class="row__value"><b class="'+(bal<0?'neg':'pos')+'">'+fmtHM(bal,true)+'</b> <small class="muted">· '+wks.length+' settimane</small></span></div>'
+          +'<div class="gh-body"'+(riepAperti.andamento?'':' hidden')+'>'
             +'<div class="row row--tap" data-dett="settimane"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+(wks.length?' <small class="muted">\u00b7 '+over+' con straordinario \u00b7 '+under+' sotto</small>':'')+'</span></div>'
             +'<div class="row row--tap" data-dett="credito"><span class="row__label">Straordinario a credito</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+authForWeek(m),0))+'</span></div>'
             +'<div class="row row--tap" data-dett="pagato"><span class="row__label">Straordinario pagato</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+pagateForWeek(m),0))+'</span></div>'
@@ -3496,19 +3496,19 @@ import * as repo from './js/repo.js';
       /* voci dell'Andamento: un tocco apre l'elenco delle settimane */
       const apriDett=()=>{
         view.querySelectorAll('.dett-out').forEach(x=>x.remove());
-        view.querySelectorAll('.row--tap').forEach(r=>r.classList.toggle('row--open', r.dataset.dett===riepDett));
+        view.querySelectorAll('.row--tap[data-dett]').forEach(r=>r.classList.toggle('row--open', r.dataset.dett===riepDett));
         if(!riepDett)return;
         const r=view.querySelector('.row--tap[data-dett="'+riepDett+'"]'); if(!r)return;
         r.insertAdjacentHTML('afterend', dettaglioHTML(riepDett));
         view.querySelectorAll('.dett-out [data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
       };
-      view.querySelectorAll('.row--tap').forEach(r=>r.onclick=()=>{riepDett=(riepDett===r.dataset.dett)?null:r.dataset.dett; apriDett();});
+      view.querySelectorAll('.row--tap[data-dett]').forEach(r=>r.onclick=()=>{riepDett=(riepDett===r.dataset.dett)?null:r.dataset.dett; apriDett();});
       apriDett();
       /* sezioni apribili: un tocco sul titolo mostra/nasconde il corpo */
       const bindTap=root=>root.querySelectorAll('.gh-tap').forEach(h=>h.onclick=()=>{
         toggleSezione(h.dataset.sez);
         const aperto=riepAperti[h.dataset.sez];
-        h.classList.toggle('is-open',aperto);
+        h.classList.toggle('row--open',aperto);
         const body=h.nextElementSibling; if(body)body.hidden=!aperto;
       });
       bindTap(view);
