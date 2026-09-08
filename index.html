@@ -5744,10 +5744,10 @@ import * as repo from './js/repo.js';
     function mostraLogin(){
       agZitto();
       let emSalvata=''; try{emSalvata=localStorage.getItem('ctm:email')||'';}catch(_){}
-      agBox.innerHTML='<form id="agF">'
+      agBox.innerHTML='<form id="agF" name="login" class="login-form" action="#" method="post" autocomplete="on">'
         +'<div class="field"><label for="agEmail">Email</label><input class="input" id="agEmail" name="username" type="email" inputmode="email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" value="'+esc(emSalvata)+'" required></div>'
         +'<div class="field"><label for="agPw">Password</label><input class="input" id="agPw" name="password" type="password" autocomplete="current-password" required></div>'
-        +'<button class="btn btn-primary" id="agGo">Entra nel registro</button></form>'
+        +'<button class="btn btn-primary" id="agGo" type="submit" name="login">Accedi</button></form>'
         +'<div class="ag-link"><a id="agLost">Password dimenticata?</a></div>';
       document.getElementById('agF').onsubmit=async ev=>{
         ev.preventDefault(); agZitto();
@@ -5769,7 +5769,7 @@ import * as repo from './js/repo.js';
     }
     function mostraReset(){
       agZitto();
-      agBox.innerHTML='<form id="agF">'
+      agBox.innerHTML='<form id="agF" name="reset" action="#" method="post">'
         +'<div class="field"><label for="agEmail">Email dell\'account</label><input class="input" id="agEmail" name="username" type="email" inputmode="email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>'
         +'<button class="btn btn-primary" id="agGo">Invia il link di reset</button></form>'
         +'<div class="ag-link"><a id="agBack">← Torna all\'accesso</a></div>';
