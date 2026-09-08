@@ -145,6 +145,7 @@ export async function loadAll() {
     events: eventi.map((r) => ({
       id: String(r.id),
       personId: r.persona_id != null ? String(r.persona_id) : null,
+      title: r.tipo || '',            /* attivita' libera: descrizione al posto della persona */
       date: r.data,
       start: hm(r.ora_inizio),
       end: hm(r.ora_fine),
@@ -434,6 +435,7 @@ export async function replaceAll(DB) {
 
 const evtRow = (ev) => ({
   persona_id: ev.personId ?? null,
+  tipo: orNull(ev.title),
   data: ev.date,
   ora_inizio: ev.start,
   ora_fine: ev.end,

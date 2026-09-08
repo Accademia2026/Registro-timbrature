@@ -3962,6 +3962,10 @@ import * as repo from './js/repo.js';
     const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
     const uid=()=>Math.random().toString(36).slice(2,9);
     const personById=id=>DB.people.find(p=>p.id===id);
+    /* attivita' libera: nessuna persona, il nome e' la descrizione scritta a mano */
+    const COLORE_LIBERA='#52707a';
+    const evName=ev=>{const p=ev&&personById(ev.personId); return p?p.name:((ev&&ev.title)||'Attività');};
+    const evColor=ev=>{const p=ev&&personById(ev.personId); return p?p.color:COLORE_LIBERA;};
     function addMin(t,m){let x=t2m(t)+m;x=Math.max(0,Math.min(24*60-1,x));return pad(Math.floor(x/60))+':'+pad(x%60);}
 
     function eventOccursOn(ev,dISO){
@@ -4022,16 +4026,16 @@ import * as repo from './js/repo.js';
         const dd=addDays(mon,i),dISO=iso(dd),isT=dISO===todayISO,wd=dd.getDay();
         head+='<div class="ch '+(isT?'today':'')+'"><div class="dn">'+DAYNAMES[i].slice(0,3)+'</div><div class="dd">'+pad(dd.getDate())+'</div></div>';
         let cell='<div class="cal-col '+(isT?'today':'')+'" data-date="'+dISO+'">';
-        cell+=bandHTML(presSl[wd],'pres')+bandHTML(studySl[wd],'study');
+        cell+=bandHTML(presSl[wd],'pres')+bandHTML(studySl[wd],'study')+bandHTML({start:(presSl[wd]||{}).mcs,end:(presSl[wd]||{}).mce},'mc');
         for(let h=H0;h<H1;h++) cell+='<div class="hr"></div>';
         const evs=dayEventsFor(dISO).map(ev=>({ev,s:Math.max(H0*60,t2m(ev.start)),e:Math.min(H1*60,t2m(ev.end))})).filter(o=>o.e>o.s);
         layoutDay(evs);
         evs.forEach(o=>{
           const top=(o.s-H0*60)/60*HH, hgt=Math.max(18,(o.e-o.s)/60*HH-2);
-          const w=100/o.cols, left=o.col*w, p=personById(o.ev.personId), color=p?p.color:'#7c7c7c';
+          const w=100/o.cols, left=o.col*w, color=evColor(o.ev);
           cell+='<div class="event" data-ev="'+o.ev.id+'" data-date="'+dISO+'" style="top:'+top+'px;height:'+hgt+'px;left:calc('+left+'% + 2px);width:calc('+w+'% - 6px);background:'+color+'">'
             +(o.ev.mode==='weekly'?'<span class="rep">↻</span>':'')
-            +'<div class="et">'+esc(p?p.name:'—')+'</div>'
+            +'<div class="et">'+esc(evName(o.ev))+'</div>'
             +'<div class="eh">'+o.ev.start+'–'+o.ev.end+'</div></div>';
         });
         cell+='</div>'; cols+=cell;
@@ -4044,8 +4048,8 @@ import * as repo from './js/repo.js';
             +'<button class="iconbtn" id="cNext" aria-label="settimana successiva">›</button>'
           +'</div>'
         +'</div>'
-        +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc((personById(appunti.ev.personId)||{}).name||'Attività')+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
-        +'<p class="diary-intro">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana. <span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio. <button class="linkbtn" id="btnIcs" style="padding:2px 6px">⤓ Esporta per Apple/Google Calendar</button></p>'
+        +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc(evName(appunti.ev))+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
+        +'<p class="diary-intro">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana. <span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot mc"></span> Masterclass. <button class="linkbtn" id="btnIcs" style="padding:2px 6px">⤓ Esporta per Apple/Google Calendar</button></p>'
         +'<div class="cal-wrap"><div class="cal"><div class="cal-head">'+head+'</div><div class="cal-body">'+gutter+cols+'</div></div></div>';
     }
     function wireCalendar(){
@@ -4094,10 +4098,10 @@ import * as repo from './js/repo.js';
         const p=personById(ev.personId), d=parseISO(ev.date);
         righe.push('BEGIN:VEVENT','UID:registro-'+ev.id+'@conservatorio','DTSTAMP:'+stamp,
           'DTSTART;TZID=Europe/Rome:'+dt(ev.date,ev.start),'DTEND;TZID=Europe/Rome:'+dt(ev.date,ev.end),
-          'SUMMARY:'+escI(p?p.name:'Attività'));
+          'SUMMARY:'+escI(evName(ev)));
         if(ev.note)righe.push('DESCRIPTION:'+escI(ev.note));
         if(ev.mode==='weekly')righe.push('RRULE:FREQ=WEEKLY;BYDAY='+BYDAY[d.getDay()]+(ev.until?';UNTIL='+ev.until.replace(/-/g,'')+'T215959Z':''));
-        if(ev.notify!=null)righe.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+escI(p?p.name:'Attività'),'TRIGGER:-PT'+ev.notify+'M','END:VALARM');
+        if(ev.notify!=null)righe.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+escI(evName(ev)),'TRIGGER:-PT'+ev.notify+'M','END:VALARM');
         righe.push('END:VEVENT');
       });
       righe.push('END:VCALENDAR');
@@ -4172,7 +4176,7 @@ import * as repo from './js/repo.js';
         : DAYNAMES[(d.getDay()+6)%7]+' '+dataIt(ev.date);
       const nOpt=NOTIFY_OPTS.find(([v])=>v===(ev.notify==null?'':String(ev.notify)));
       const doc=(ev.countTeacher&&p&&p.teacherId&&personById(p.teacherId))?personById(p.teacherId).name:null;
-      modalBg.innerHTML='<div class="modal"><h3><span class="dot" style="background:'+(p?p.color:'#7c7c7c')+';display:inline-block;vertical-align:1px;margin-right:8px"></span>'+esc(p?p.name:'Attività')+'</h3>'
+      modalBg.innerHTML='<div class="modal"><h3><span class="dot" style="background:'+evColor(ev)+';display:inline-block;vertical-align:1px;margin-right:8px"></span>'+esc(evName(ev))+'</h3>'
         +'<div class="mbody">'
         +riga('Quando', quando)
         +riga('Orario', ev.start+' – '+ev.end+' <span class="muted">('+fmtHM(Math.max(0,(t2m(ev.end)??0)-(t2m(ev.start)??0)))+')</span>')
@@ -4189,7 +4193,7 @@ import * as repo from './js/repo.js';
     function menuEvento(ev){
       const p=personById(ev.personId);
       const b=(id,cls,txt)=>'<button class="btn '+cls+'" id="'+id+'" style="width:100%;justify-content:flex-start">'+txt+'</button>';
-      modalBg.innerHTML='<div class="modal"><h3>'+esc(p?p.name:'Attività')+' <span class="muted" style="font-size:14px;font-family:var(--sans)">'+ev.start+'–'+ev.end+'</span></h3>'
+      modalBg.innerHTML='<div class="modal"><h3>'+esc(evName(ev))+' <span class="muted" style="font-size:14px;font-family:var(--sans)">'+ev.start+'–'+ev.end+'</span></h3>'
         +'<div class="mbody" style="gap:8px">'
         +b('mnCopia','ghost','⧉ Copia')
         +(ev.mode==='weekly'?'':b('mnTaglia','ghost','✂ Taglia'))
@@ -4205,7 +4209,7 @@ import * as repo from './js/repo.js';
     }
     async function incollaAppunti(dISO,start){
       const src=appunti.ev, dur=Math.max(15,(t2m(src.end)??0)-(t2m(src.start)??0));
-      const nuovo={personId:src.personId,date:dISO,start,end:addMin(start,dur),mode:'single',until:null,notify:src.notify,note:src.note||'',countTeacher:!!src.countTeacher};
+      const nuovo={personId:src.personId,title:src.title||'',date:dISO,start,end:addMin(start,dur),mode:'single',until:null,notify:src.notify,note:src.note||'',countTeacher:!!src.countTeacher};
       try{
         nuovo.id=await repo.insertEvento(nuovo); DB.events.push(nuovo);
         if(appunti.taglia){ await repo.deleteEvento(src.id); DB.events=DB.events.filter(e=>e.id!==src.id); }
@@ -4226,7 +4230,8 @@ import * as repo from './js/repo.js';
         +'<h3>'+(ev?'Modifica attività':'Nuova attività')+'</h3>'
         +'<div class="mbody">'
           +'<div class="mfield"><label>Docente / alunno</label>'
-            +'<select id="mPerson">'+pOpts+'<option value="__new">➕ Nuova persona…</option></select></div>'
+            +'<select id="mPerson"><option value="" '+(ev&&!ev.personId?'selected':'')+'>✎ Attività libera (senza persona)</option>'+pOpts+'<option value="__new">➕ Nuova persona…</option></select></div>'
+          +'<div class="mfield" id="titleBox" style="display:none"><label>Che attività è</label><input id="mTitle" placeholder="es. Riunione, Prove d’orchestra, Segreteria…" value="'+(ev?esc(ev.title||''):'')+'"></div>'
           +'<div id="newPersonBox" style="display:none">'
             +'<div class="mrow">'
               +'<div class="mfield"><label>Nome</label><input id="npName" placeholder="Nome e cognome"></div>'
@@ -4263,13 +4268,14 @@ import * as repo from './js/repo.js';
       }
       function sync(){
         npBox.style.display=sel.value==='__new'?'block':'none';
+        document.getElementById('titleBox').style.display=sel.value===''?'flex':'none';
         document.getElementById('npTeacherBox').style.display=(sel.value==='__new'&&npRole.value==='alunno')?'flex':'none';
         const t=effTeacher(), box=document.getElementById('teacherCountBox');
         if(t){box.style.display='flex';document.getElementById('mTeacherName').textContent=t.name;}
         else box.style.display='none';
       }
       sel.onchange=sync; npRole.onchange=sync; document.getElementById('npTeacher').onchange=sync;
-      if(!DB.people.length)sel.value='__new'; sync();
+      if(ev&&!ev.personId)sel.value=''; sync();
       const rep=document.getElementById('mRepeat');
       rep.onchange=()=>document.getElementById('untilBox').style.display=rep.checked?'flex':'none';
       document.getElementById('mNotify').onchange=e=>{if(e.target.value!==''&&'Notification'in window&&Notification.permission==='default')Notification.requestPermission();};
@@ -4290,7 +4296,8 @@ import * as repo from './js/repo.js';
       })() : null;
       if(personId==='__new' && !nuovaPersona){toast('Inserisci il nome della persona');return;}
       if(personId==='__new'){/* id assegnato più sotto, dopo l'insert */}
-      else if(!personId){toast('Seleziona una persona');return;}
+      const title=(document.getElementById('mTitle')||{}).value?.trim()||'';
+      if(personId===''){ if(!title){toast('Scrivi che attività è');return;} personId=null; }
       const date=document.getElementById('mDate').value, start=document.getElementById('mStart').value, end=document.getElementById('mEnd').value;
       if(!date||!start||!end){toast('Compila data e orari');return;}
       if(t2m(end)<=t2m(start)){toast('La fine deve essere dopo l\'inizio');return;}
@@ -4308,11 +4315,11 @@ import * as repo from './js/repo.js';
           DB.people.push(nuovaPersona); personId=nuovaPersona.id;
         }
         if(existing){
-          const nuovi={personId,date,start,end,mode,until,notify,note,countTeacher};
+          const nuovi={personId,title:personId?'':title,date,start,end,mode,until,notify,note,countTeacher};
           await repo.updateEvento(existing.id,{...existing,...nuovi});
           Object.assign(existing,nuovi);     /* lo stato locale cambia solo a salvataggio riuscito */
         } else {
-          const nuovo={personId,date,start,end,mode,until,notify,note,countTeacher};
+          const nuovo={personId,title:personId?'':title,date,start,end,mode,until,notify,note,countTeacher};
           nuovo.id=await repo.insertEvento(nuovo);
           DB.events.push(nuovo);
         }

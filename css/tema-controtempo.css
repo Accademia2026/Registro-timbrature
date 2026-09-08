@@ -422,3 +422,7 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 .gh-sum b{font-weight:700;font-variant-numeric:tabular-nums}
 .gh-sum b.pos{color:var(--teal)} .gh-sum b.neg{color:var(--yellow-d)}
 .gh-sum{white-space:nowrap}
+
+/* calendario: fascia Masterclass pianificata (viola) */
+#appRoot .cal-band.mc{background:var(--mc-wash);border-top:2px solid var(--mc);border-bottom:2px solid var(--mc)}
+.lg-dot.mc{background:var(--mc-wash);border:1px solid var(--mc)}
