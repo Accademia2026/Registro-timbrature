@@ -5743,17 +5743,26 @@ import * as repo from './js/repo.js';
 
     function mostraLogin(){
       agZitto();
+      let emSalvata=''; try{emSalvata=localStorage.getItem('ctm:email')||'';}catch(_){}
       agBox.innerHTML='<form id="agF">'
-        +'<div class="field"><label for="agEmail">Email</label><input class="input" id="agEmail" name="username" type="email" inputmode="email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></div>'
+        +'<div class="field"><label for="agEmail">Email</label><input class="input" id="agEmail" name="username" type="email" inputmode="email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" value="'+esc(emSalvata)+'" required></div>'
         +'<div class="field"><label for="agPw">Password</label><input class="input" id="agPw" name="password" type="password" autocomplete="current-password" required></div>'
         +'<button class="btn btn-primary" id="agGo">Entra nel registro</button></form>'
         +'<div class="ag-link"><a id="agLost">Password dimenticata?</a></div>';
       document.getElementById('agF').onsubmit=async ev=>{
         ev.preventDefault(); agZitto();
         const b=document.getElementById('agGo'); b.disabled=true;
-        const {error}=await login(document.getElementById('agEmail').value.trim(),document.getElementById('agPw').value);
+        let em=document.getElementById('agEmail').value.trim(), pw=document.getElementById('agPw').value;
+        /* la compilazione automatica di iPhone a volte inverte i due campi:
+           se l'email e' finita nella password (e viceversa) si rimettono a posto */
+        if(!em.includes('@')){
+          if(pw.includes('@')){ const t=em; em=pw.trim(); pw=t; }
+          else if(!pw && emSalvata){ pw=em; em=emSalvata; }   /* solo la password e' finita nel campo sbagliato */
+        }
+        const {error}=await login(em,pw);
         b.disabled=false;
         if(error)return agSay(msgErrore(error),'err');
+        try{localStorage.setItem('ctm:email',em);}catch(_){}
         avviaApp();
       };
       document.getElementById('agLost').onclick=mostraReset;
