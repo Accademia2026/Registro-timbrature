@@ -3346,6 +3346,13 @@ import * as repo from './js/repo.js';
     /* libro mastro del saldo ore: un movimento per settimana e per tipo
        (credito autorizzato, debito, riposo compensativo), con saldo progressivo */
     let movFiltro='tutti';
+    /* sezioni del Riepilogo apribili: stato ricordato sul dispositivo */
+    let riepAperti={andamento:false,mov:false};
+    try{ const s=JSON.parse(localStorage.getItem('ctm:riep-aperti')||'null'); if(s&&typeof s==='object')riepAperti={...riepAperti,...s}; }catch(_){}
+    function toggleSezione(sez){
+      riepAperti[sez]=!riepAperti[sez];
+      try{localStorage.setItem('ctm:riep-aperti',JSON.stringify(riepAperti));}catch(_){}
+    }
     function movimentiSaldo(){
       const out=[]; let bal=DB.initialBalanceMin||0;
       for(const mon of weeksWithData()){
@@ -3377,10 +3384,13 @@ import * as repo from './js/repo.js';
           +'<button class="wtag wtag--link" data-openweek="'+m.mon+'">Apri ›</button>'
         +'</div>').join('')
         :'<div class="row"><span class="row__label muted">Nessun movimento'+(movFiltro!=='tutti'?' di questo tipo':'')+'.</span></div>';
-      return '<div class="group-header">Saldo ore: movimenti</div><div class="group">'
+      const aperto=riepAperti.mov;
+      const sintesi='<span class="gh-sum"><b class="pos">'+fmtHM(tot('credito'),true)+'</b> · <b class="neg">'+fmtHM(tot('debito'),true)+'</b> · <b>'+fmtHM(tot('riposo'),true)+'</b></span>';
+      return '<div class="group-header gh-tap'+(aperto?' is-open':'')+'" data-sez="mov"><span>Saldo ore: movimenti</span>'+sintesi+'<span class="gh-chev"></span></div>'
+        +'<div class="gh-body"'+(aperto?'':' hidden')+'><div class="group">'
         +'<div class="row" style="align-items:flex-end;padding-top:12px;padding-bottom:10px"><div><div class="foot muted">Saldo iniziale '+fmtHM(DB.initialBalanceMin||0,true)+' · '+n('credito')+' crediti · '+n('debito')+' debiti · '+n('riposo')+' riposi</div></div></div>'
         +filtri+righe+'</div>'
-        +'<p class="group-note">Credito = straordinario autorizzato a credito. Debito = settimana sotto le ore dovute. Riposo = ore di riposo compensativo prese dal saldo. Il saldo indicato è quello raggiunto dopo il movimento.</p>';
+        +'<p class="group-note">Credito = straordinario autorizzato a credito. Debito = settimana sotto le ore dovute. Riposo = ore di riposo compensativo prese dal saldo. Il saldo indicato è quello raggiunto dopo il movimento.</p></div>';
     }
     function dettaglioHTML(key){
       const wks=weeksWithData(), righe=[];
@@ -3456,7 +3466,8 @@ import * as repo from './js/repo.js';
               +'<button class="btn btn--filled btn--pill" id="btnTimbra" '+(slot?'':'disabled')+'>'+(slot?('Timbra '+slot.l.toLowerCase()):'Giornata completa')+'</button>'
             +'</div>'
           +'</div></div>'
-          +'<div><div class="group-header">Andamento</div><div class="group">'
+          +'<div><div class="group-header gh-tap'+(riepAperti.andamento?' is-open':'')+'" data-sez="andamento"><span>Andamento</span><span class="gh-sum"><b class="'+(bal<0?'neg':'pos')+'">'+fmtHM(bal,true)+'</b> · '+wks.length+' sett.</span><span class="gh-chev"></span></div>'
+          +'<div class="gh-body"'+(riepAperti.andamento?'':' hidden')+'><div class="group">'
             +'<div class="row row--tap" data-dett="saldo" style="align-items:flex-end;padding-top:14px;padding-bottom:12px"><div><div class="foot muted">Saldo ore complessivo</div>'
               +'<div class="num '+(bal<0?'neg':'pos')+'" style="font-size:var(--t-large);font-weight:600;line-height:1">'+fmtHM(bal,true)+'</div></div>'
               +'<span class="badge '+(bal<0?'badge--neg':'badge--pos')+'">'+(bal<0?'Debito':'Credito')+'</span></div>'
@@ -3469,7 +3480,7 @@ import * as repo from './js/repo.js';
             +'<div class="row row--tap" data-dett="malattia"><span class="row__label">Malattia</span><span class="row__value">'+malattia+' <small class="muted">gg</small></span></div>'
             +'<div class="row row--tap" data-dett="omessa"><span class="row__label">Omesse timbrature</span><span class="row__value '+(omessaCount()?'neg':'')+'">'+omessaCount()+'</span></div>'
             +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza ordinaria e straordinario a credito; il riposo compensativo lo scala. Masterclass, straordinario pagato e studio restano a parte.</p>'
-          +'</div></div>'
+          +'</div></div></div>'
           +'<div id="saldoBox">'+saldoHTML()+'</div>'
           +'<div><div class="group-header">'+(ultima?'Ultima settimana':'Settimane')+'</div><div class="group">'+settimane+'</div>'
             +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Le etichette raccontano cosa \u00e8 successo.</p></div>'
@@ -3493,9 +3504,18 @@ import * as repo from './js/repo.js';
       };
       view.querySelectorAll('.row--tap').forEach(r=>r.onclick=()=>{riepDett=(riepDett===r.dataset.dett)?null:r.dataset.dett; apriDett();});
       apriDett();
+      /* sezioni apribili: un tocco sul titolo mostra/nasconde il corpo */
+      const bindTap=root=>root.querySelectorAll('.gh-tap').forEach(h=>h.onclick=()=>{
+        toggleSezione(h.dataset.sez);
+        const aperto=riepAperti[h.dataset.sez];
+        h.classList.toggle('is-open',aperto);
+        const body=h.nextElementSibling; if(body)body.hidden=!aperto;
+      });
+      bindTap(view);
       /* libro mastro del saldo: filtri senza ridisegnare tutta la pagina */
       const bindSaldo=()=>{
         const box=document.getElementById('saldoBox'); if(!box)return;
+        bindTap(box);
         box.querySelectorAll('[data-movf]').forEach(b=>b.onclick=()=>{movFiltro=b.dataset.movf; box.innerHTML=saldoHTML(); bindSaldo();});
         box.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
       };
