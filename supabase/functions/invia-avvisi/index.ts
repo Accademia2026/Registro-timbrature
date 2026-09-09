@@ -7,14 +7,17 @@
 //
 // Segreti da impostare (Edge Functions → Secrets):
 //   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (es. mailto:admin@weega.it),
-//   CRON_SECRET (una parola d'ordine a piacere, la stessa messa nel Cron)
+//   CRON_SECRET (una parola d'ordine a piacere, la stessa messa nel Cron),
+//   SB_SECRET_KEY (la "secret key" del progetto: Settings → API Keys)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sono forniti da Supabase.
 // ============================================================================
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 
 const URL_DB = Deno.env.get('SUPABASE_URL')!;
-const CHIAVE_SERVIZIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+/* chiave con pieni poteri: la 'secret key' nuova (SB_SECRET_KEY, da mettere nei Secrets)
+   oppure quella storica che Supabase fornisce da solo */
+const CHIAVE_SERVIZIO = Deno.env.get('SB_SECRET_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 const VAPID_PUB = Deno.env.get('VAPID_PUBLIC_KEY') || '';
 const VAPID_PRIV = Deno.env.get('VAPID_PRIVATE_KEY') || '';
 const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@weega.it';
