@@ -349,6 +349,30 @@ export async function deleteRichiesta(id) {
   check('eliminazione richiesta', await supabase.from('richieste').delete().eq('id', id));
 }
 
+/* ============================================================ notifiche push
+   Iscrizioni dei dispositivi (tabella push_subscriptions, script 08) e
+   chiamata alla funzione server "invia-avvisi". */
+export async function savePushSubscription(sub, dispositivo) {
+  const j = typeof sub.toJSON === 'function' ? sub.toJSON() : sub;
+  const r = await supabase.from('push_subscriptions').upsert({
+    endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, dispositivo: dispositivo || null,
+  }, { onConflict: 'user_id,endpoint' });
+  check('attivazione notifiche', r);
+}
+export async function deletePushSubscription(endpoint) {
+  check('disattivazione notifiche', await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint));
+}
+export async function hasPushSubscription(endpoint) {
+  const { data, error } = await supabase.from('push_subscriptions').select('id').eq('endpoint', endpoint).maybeSingle();
+  if (error) throw error;
+  return !!data;
+}
+export async function invocaAvvisi(body) {
+  const { data, error } = await supabase.functions.invoke('invia-avvisi', { body: body || {} });
+  if (error) throw error;
+  return data;
+}
+
 /** Azzera solo le giornate: timbrature (entries+skipDays) e autorizzazioni. */
 export async function clearTimbrature() {
   const u = await uid();

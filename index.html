@@ -4251,7 +4251,7 @@ import * as repo from './js/repo.js';
           +'<div class="mfield" id="untilBox" style="display:'+(ev&&ev.mode==='weekly'?'flex':'none')+'"><label>Fino al (facoltativo)</label><input type="date" id="mUntil" value="'+(ev&&ev.until?ev.until:'')+'"></div>'
           +'<div class="mfield"><label>Avviso</label><select id="mNotify">'+nOpts+'</select></div>'
           +'<div class="mfield"><label>Note</label><textarea id="mNote" placeholder="Note…">'+(ev?esc(ev.note||''):'')+'</textarea></div>'
-          +'<p class="mnote">Gli avvisi compaiono come notifica mentre l\'app è aperta.</p>'
+          +'<p class="mnote">Gli avvisi arrivano come notifica; con le notifiche push attive (Impostazioni) anche ad app chiusa.</p>'
         +'</div>'
         +'<div class="mfoot">'
           +(ev?'<button class="linkbtn del" id="mDelete">Elimina</button>':'')
@@ -4467,6 +4467,68 @@ import * as repo from './js/repo.js';
     }
 
     let notifyTimers=[];
+    /* ---------- notifiche push (service worker + iscrizione al server) ---------- */
+    const VAPID_PUBLIC_KEY='BNHrtQeDro0Y9MzbZhiPJ5s7PIxdHS53D4mztthU_zJj8wMg8zEDzOxPDO2z2BsunRhvlv0F8sLZblqFG065MBU';
+    function b64uToBytes(s){const b=atob((s+'==='.slice((s.length+3)%4)).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0));}
+    const pushSupportato=()=>('serviceWorker' in navigator)&&('PushManager' in window)&&('Notification' in window);
+    const isIOS=()=>/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+    const installata=()=>window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+    async function registraSW(){
+      if(!('serviceWorker' in navigator))return null;
+      try{ return await navigator.serviceWorker.register('sw.js',{scope:'./'}); }
+      catch(e){ console.warn('service worker non registrato',e); return null; }
+    }
+    async function iscrizioneAttuale(){
+      if(!pushSupportato())return null;
+      const reg=await navigator.serviceWorker.getRegistration('./'); if(!reg)return null;
+      return await reg.pushManager.getSubscription();
+    }
+    async function aggiornaStatoPush(){
+      const el=document.getElementById('pushStato'); if(!el)return;
+      const on=document.getElementById('pushOn'), off=document.getElementById('pushOff'), prova=document.getElementById('pushProva');
+      const mostra=(txt,attive)=>{ el.textContent=txt; if(on)on.style.display=attive?'none':''; if(off)off.style.display=attive?'':'none'; if(prova)prova.style.display=attive?'':'none'; };
+      if(isIOS()&&!installata()){ mostra('Su iPhone le notifiche funzionano solo dall’app installata: Condividi → Aggiungi alla schermata Home, poi apri l’app da lì.',false); if(on)on.disabled=true; return; }
+      if(!pushSupportato()){ mostra('Questo browser non supporta le notifiche push.',false); if(on)on.disabled=true; return; }
+      if(Notification.permission==='denied'){ mostra('Notifiche bloccate nelle impostazioni del dispositivo per questa app.',false); if(on)on.disabled=true; return; }
+      try{
+        const sub=await iscrizioneAttuale();
+        if(sub){
+          let nelDb=false; try{ nelDb=await repo.hasPushSubscription(sub.endpoint); }catch(_){}
+          if(nelDb){ mostra('✓ Notifiche attive su questo dispositivo.',true); return; }
+          mostra('Iscrizione presente sul dispositivo ma non registrata: tocca Attiva.',false); return;
+        }
+      }catch(_){}
+      mostra('Notifiche non attive su questo dispositivo.',false);
+    }
+    async function attivaPush(){
+      const b=document.getElementById('pushOn'); if(b)b.disabled=true;
+      try{
+        const perm=await Notification.requestPermission();
+        if(perm!=='granted'){ toast('Permesso negato: le notifiche restano spente'); return; }
+        const reg=(await registraSW())||(await navigator.serviceWorker.ready);
+        let sub=await reg.pushManager.getSubscription();
+        if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:b64uToBytes(VAPID_PUBLIC_KEY)});
+        await repo.savePushSubscription(sub, navigator.userAgent.slice(0,120));
+        toast('Notifiche attivate su questo dispositivo');
+      }catch(e){ console.error(e); toast('Attivazione non riuscita: '+(e&&e.message||'errore')); }
+      finally{ if(b)b.disabled=false; aggiornaStatoPush(); }
+    }
+    async function disattivaPush(){
+      try{
+        const sub=await iscrizioneAttuale();
+        if(sub){ try{ await repo.deletePushSubscription(sub.endpoint); }catch(_){} await sub.unsubscribe(); }
+        toast('Notifiche disattivate su questo dispositivo');
+      }catch(e){ toast('Disattivazione non riuscita'); }
+      aggiornaStatoPush();
+    }
+    async function provaPush(){
+      const b=document.getElementById('pushProva'); if(b)b.disabled=true;
+      try{
+        const r=await repo.invocaAvvisi({test:true});
+        toast(r&&r.inviate?('Notifica di prova inviata a '+r.inviate+(r.inviate===1?' dispositivo':' dispositivi')):'Nessun dispositivo raggiunto: riattiva le notifiche');
+      }catch(e){ toast('Prova non riuscita: la funzione server non risponde'); }
+      finally{ if(b)b.disabled=false; }
+    }
     function scheduleNotifications(){
       notifyTimers.forEach(t=>clearTimeout(t)); notifyTimers=[];
       if(!('Notification'in window)||Notification.permission!=='granted')return;
@@ -5495,6 +5557,11 @@ import * as repo from './js/repo.js';
           +'<input type="file" id="fileImport" accept="application/json,.json" style="display:none">'
         +'</div>'
         +'<div class="divider"></div>'
+        +'<h2 class="sec-h">Notifiche push</h2>'
+        +'<p class="sec-d">Gli avvisi delle attività del calendario arrivano anche ad app chiusa. Su iPhone funzionano solo con l’app installata dalla schermata Home (iOS 16.4 o successivo). Vanno attivate su ogni dispositivo.</p>'
+        +'<div class="card" style="padding:12px 16px"><div id="pushStato" class="hint" style="margin:0 0 10px">Controllo…</div>'
+          +'<div class="setrow" style="margin:0;gap:8px"><button class="btn" id="pushOn">Attiva su questo dispositivo</button><button class="btn ghost" id="pushOff">Disattiva</button><button class="btn ghost" id="pushProva">Invia notifica di prova</button></div></div>'
+        +'<div class="divider"></div>'
         +'<h2 class="sec-h">Installazione e condivisione</h2>'
         +'<p class="sec-d">Installa l’app sul telefono e condividila con i colleghi (Android o iPhone): ognuno avrà la propria copia, con i propri dati.</p>'
         +'<div id="installBox" class="setrow" style="margin:0 0 4px"></div>'
@@ -5579,6 +5646,11 @@ import * as repo from './js/repo.js';
       caricaJsPDF().catch(()=>{});
       view.querySelectorAll('[data-pdforario]').forEach(b=>b.onclick=()=>{ commitOrario(); pdfOrario(+b.dataset.pdforario); });
       const bes=document.getElementById('btnExpSeg'); if(bes)bes.onclick=apriEsportaSegreteria;
+      /* notifiche push */
+      const pOn=document.getElementById('pushOn'); if(pOn)pOn.onclick=attivaPush;
+      const pOff=document.getElementById('pushOff'); if(pOff)pOff.onclick=disattivaPush;
+      const pTest=document.getElementById('pushProva'); if(pTest)pTest.onclick=provaPush;
+      aggiornaStatoPush();
       view.querySelectorAll('[data-dupperiod]').forEach(b=>b.onclick=()=>{
         const obj=DB.schedulePeriods[+b.dataset.pi];
         commitOrario();
@@ -5786,6 +5858,7 @@ import * as repo from './js/repo.js';
 
     async function avviaApp(){
       gate.style.display='none';
+      registraSW();      /* service worker per le notifiche push (non blocca l'avvio) */
       repo.setOnError((ctx,err)=>{
         console.error('[repo]',ctx,err);
         try{toast('⚠️ Salvataggio non riuscito: controlla la connessione');}catch(_){}
