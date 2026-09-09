@@ -5195,6 +5195,9 @@ import * as repo from './js/repo.js';
     let openWd=null;             /* giorno aperto dentro la variazione */
     function allineaPeriodi(){
       const P=DB.schedulePeriods, S=DB.studyPeriods;
+      /* con due periodi che partono dalla stessa settimana non si riallinea:
+         li fonderebbe perdendone uno. Lo segnala erroriOrario al salvataggio. */
+      if(new Set(P.map(x=>x.from)).size!==P.length) return false;
       const froms=[...new Set([...P.map(x=>x.from),...S.map(x=>x.from)])].sort();
       const ok=P.length===froms.length&&S.length===froms.length&&froms.every((f,i)=>P[i].from===f&&S[i].from===f);
       if(ok)return false;
@@ -5463,6 +5466,9 @@ import * as repo from './js/repo.js';
     /* tutti i periodi devono rispettare i vincoli prima di salvare */
     function erroriOrario(){
       const out=[];
+      /* due periodi con la stessa settimana di inizio si fonderebbero: meglio dirlo */
+      const visti=new Set();
+      DB.schedulePeriods.forEach(p=>{ if(visti.has(p.from))out.push('Due orari partono dalla stessa settimana ('+(p.from?dataItFull(p.from):'inizio')+'): cambia la data di uno dei due'); visti.add(p.from); });
       DB.schedulePeriods.forEach((p,pi)=>{
         const v=verificaPeriodo(pi);
         if(v.errori.length)out.push((pi===0?'Dall’inizio':'Dal '+p.from)+(p.to?' al '+fineSettimanaISO(p.to):'')+' — '+v.errori[0]);
@@ -5629,8 +5635,12 @@ import * as repo from './js/repo.js';
         renderImpostazioni();
       });
       const nuovaCoppia=(srcP,srcS)=>{
-        const from=iso(mondayOf(new Date()));
-        const np={...clona(srcP),from}, ns={...clona(srcS||{schedule:{1:0,2:0,3:0,4:0,5:0,6:0,0:0},slots:{}}),from};
+        /* parte dal primo lunedi' libero: due periodi con la stessa data di
+           inizio verrebbero fusi dal riallineamento e il nuovo sparirebbe */
+        const usati=new Set(DB.schedulePeriods.map(p=>p.from));
+        let d=mondayOf(new Date()); while(usati.has(iso(d))) d=addDays(d,7);
+        const from=iso(d);
+        const np={...clona(srcP),from,to:''}, ns={...clona(srcS||{schedule:{1:0,2:0,3:0,4:0,5:0,6:0,0:0},slots:{}}),from,to:''};
         DB.schedulePeriods.push(np); DB.studyPeriods.push(ns);
         ordinaCoppie();
         openPer.pres=DB.schedulePeriods.indexOf(np); openWd=null;
