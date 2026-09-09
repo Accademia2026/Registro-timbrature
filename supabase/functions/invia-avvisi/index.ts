@@ -26,8 +26,14 @@ const CRON_SECRET = Deno.env.get('CRON_SECRET') || '';
 const db = createClient(URL_DB, CHIAVE_SERVIZIO, { auth: { persistSession: false } });
 if (VAPID_PUB && VAPID_PRIV) webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUB, VAPID_PRIV);
 
+/* CORS: l'app nel browser chiama la funzione per la notifica di prova */
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info, x-cron-secret',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  new Response(JSON.stringify(body), { status, headers: { ...CORS, 'content-type': 'application/json' } });
 
 /* data e ora attuali in Italia (Europe/Rome), indipendenti dal server */
 function adessoRoma() {
@@ -76,6 +82,7 @@ Deno.serve(async (req) => {
 });
 
 async function gestisci(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (!VAPID_PUB || !VAPID_PRIV) return json({ errore: 'chiavi VAPID mancanti' }, 500);
   if (!CHIAVE_SERVIZIO) return json({ errore: 'SB_SECRET_KEY mancante' }, 500);
   let body: { test?: boolean } = {};
