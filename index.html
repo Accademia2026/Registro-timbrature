@@ -569,7 +569,7 @@ document.addEventListener('gesturechange',function(e){e.preventDefault();},{pass
         <button data-v="registro"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path></svg>Timbrature</button>
         <button data-v="attivita"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13l3 3v13H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg>Registro attività</button>
         <button data-v="permessi"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 3h14v18l-7-4-7 4z"></path></svg>Permessi</button>
-        <button data-v="impostazioni"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.07-.33.1-.66.1-1z"></path></svg>Impostazioni</button>
+        <button data-v="orario"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>Orario di lavoro</button>
       </nav>
       <div class="side-foot">Obbligo settimanale <b id="footObl">24h</b> su lun–gio.<br>Salvataggio automatico.</div>
     </aside>
@@ -579,7 +579,7 @@ document.addEventListener('gesturechange',function(e){e.preventDefault();},{pass
       <button data-v="registro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path></svg><span>Timbrature</span></button>
       <button data-v="attivita"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4h13l3 3v13H4z"></path><path d="M8 9h8M8 13h8M8 17h5"></path></svg><span>Attività</span></button>
       <button data-v="permessi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 3h14v18l-7-4-7 4z"></path></svg><span>Permessi</span></button>
-      <button data-v="impostazioni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"></circle><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.07-.33.1-.66.1-1z"></path></svg><span>Impostazioni</span></button>
+      <button data-v="orario"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span>Orario</span></button>
     </nav>
 
     <div class="main">
@@ -595,6 +595,7 @@ document.addEventListener('gesturechange',function(e){e.preventDefault();},{pass
             <span class="lab">Saldo ore</span>
             <span class="val mono" id="chipBal">—</span>
           </div>
+          <button class="iconbtn" id="btnImpostazioni" title="Impostazioni" aria-label="Impostazioni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><circle cx="12" cy="12" r="3"></circle><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.07-.33.1-.66.1-1z"></path></svg></button>
           <button class="iconbtn" id="btnLogout" title="Esci" style="width:auto;padding:0 14px;font-size:13px;font-weight:600">Esci</button>
         </div>
       </header>
@@ -3271,14 +3272,17 @@ import * as repo from './js/repo.js';
       clearInterval(clockTimer);
       closeKeypad();
       document.querySelectorAll('#nav button,#mobnav button').forEach(b=>b.classList.toggle('active',b.dataset.v===v));
-      const titles={riepilogo:'Riepilogo',registro:'Timbrature',attivita:'Registro attività',permessi:'Permessi e assenze',impostazioni:'Impostazioni'};
+      const titles={riepilogo:'Riepilogo',registro:'Timbrature',attivita:'Registro attività',permessi:'Permessi e assenze',orario:'Orario di lavoro',impostazioni:'Impostazioni'};
       document.getElementById('title').textContent=titles[v];
       document.getElementById('crumb').textContent=titles[v];
+      /* orario e impostazioni condividono la stessa pagina: si mostra solo la parte giusta */
+      view.classList.toggle('solo-orario', v==='orario');
+      view.classList.toggle('solo-imp', v==='impostazioni');
       if(v==='riepilogo')renderRiepilogo();
       if(v==='registro')renderRegistro();
       if(v==='attivita')renderAttivita();
       if(v==='permessi')renderPermessi();
-      if(v==='impostazioni')renderImpostazioni();
+      if(v==='impostazioni'||v==='orario')renderImpostazioni();
       refreshChip();
     }
     function refreshChip(){
@@ -5511,7 +5515,8 @@ import * as repo from './js/repo.js';
       let chiusSugg='';
       if(DB.startDate){const sd=parseISO(DB.startDate); chiusSugg=iso(new Date(sd.getFullYear()+1,sd.getMonth(),sd.getDate()));}
       view.innerHTML=
-        '<h2 class="sec-h">Anno e saldo di partenza</h2>'
+        '<section class="sez-imp">'
+        +'<h2 class="sec-h">Anno e saldo di partenza</h2>'
         +'<p class="sec-d">Valori già maturati prima dell’uso dell’app (per allinearsi alla situazione attuale).</p>'
         +'<div class="card" style="padding:18px 20px">'
           +'<div class="setrow" style="margin:0">'
@@ -5526,11 +5531,11 @@ import * as repo from './js/repo.js';
             +'</div>'
           +'</div>'
         +'</div>'
-        +'<div class="divider"></div>'
+        +'</section><section class="sez-orario">'
         +'<h2 class="sec-h">Orario di lavoro · 36 ore</h2>'
         +'<p class="sec-d">Tocca un giorno e inserisci le fasce di <b>presenza</b> e di <b>studio</b>. In settimana devono fare 36 ore, senza sovrapporsi e senza superare le 9 ore al giorno.</p>'
         +'<div class="card" style="padding:14px 18px">'+orarioEditorHTML()+'</div>'
-        +'<div class="divider"></div>'
+        +'</section><section class="sez-imp">'
         +'<h2 class="sec-h">Limiti permessi</h2>'
         +'<p class="sec-d"><b>Diritto</b> = spettanza annua · <b>Già fruito</b> = quanto consumato prima dell’app. «Valori CCNL» carica i riferimenti del CCNL Funzionari AFAM (ferie: regola per orario su 6 giorni e ≥3 anni di servizio — adatta il numero al tuo caso). Attenzione: i vincoli mensili, per evento e di coppia restano a tua cura.</p>'
         +'<div class="card" style="padding:6px 16px 14px" id="entEdit">'+rows
@@ -5579,7 +5584,8 @@ import * as repo from './js/repo.js';
           +'<button class="btn warn" id="clearPunches">Azzera timbrature</button>'
           +'<button class="btn danger" id="resetAll">Azzera tutti i dati</button>'
         +'</div>'
-        +'<p class="hint"><b>Azzera timbrature</b>: cancella solo le giornate registrate (mantiene orari, permessi e impostazioni). <b>Azzera tutti i dati</b>: ripristina tutto ai valori iniziali.</p>';
+        +'<p class="hint"><b>Azzera timbrature</b>: cancella solo le giornate registrate (mantiene orari, permessi e impostazioni). <b>Azzera tutti i dati</b>: ripristina tutto ai valori iniziali.</p>'
+        +'</section>';
 
       view.querySelectorAll('[data-scht]').forEach(b=>b.onclick=()=>openKeypad(b));
       view.querySelectorAll('input.schpzin[data-bp]').forEach(i=>i.addEventListener('input',()=>{
@@ -5777,6 +5783,7 @@ import * as repo from './js/repo.js';
     function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1800);}
 
     document.querySelectorAll('#nav button,#mobnav button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
+    document.getElementById('btnImpostazioni').onclick=()=>setView('impostazioni');
 
     /* ---------- Tema chiaro/scuro (modello Controtempo, brief §3) ----------
        Tre stati: scelta esplicita salvata (data-theme sull'elemento radice)

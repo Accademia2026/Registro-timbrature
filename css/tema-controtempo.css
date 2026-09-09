@@ -426,3 +426,13 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 /* calendario: fascia Masterclass pianificata (viola) */
 #appRoot .cal-band.mc{background:var(--mc-wash);border-top:2px solid var(--mc);border-bottom:2px solid var(--mc)}
 .lg-dot.mc{background:var(--mc-wash);border:1px solid var(--mc)}
+
+/* Orario di lavoro e Impostazioni condividono la pagina: si vede solo la parte giusta */
+#view.solo-orario .sez-imp,#view.solo-imp .sez-orario{display:none}
+#view.solo-orario .sez-orario>.sec-h{display:none}
+.iconbtn svg{display:block}
+@media (max-width:480px){
+  .topbar-right{gap:8px}
+  .balance-chip{padding:8px 12px}
+  #btnImpostazioni{width:40px;height:40px}
+}
