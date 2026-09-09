@@ -66,7 +66,18 @@ async function spedisci(iscrizioni: Iscrizione[], payload: Record<string, unknow
 }
 
 Deno.serve(async (req) => {
+  try { return await gestisci(req); }
+  catch (e) {
+    /* qualunque imprevisto finisce nei Logs e nella risposta, mai un 500 muto */
+    const msg = (e as Error)?.message || String(e);
+    console.error('invia-avvisi: errore', msg, (e as Error)?.stack);
+    return json({ errore: msg }, 500);
+  }
+});
+
+async function gestisci(req: Request): Promise<Response> {
   if (!VAPID_PUB || !VAPID_PRIV) return json({ errore: 'chiavi VAPID mancanti' }, 500);
+  if (!CHIAVE_SERVIZIO) return json({ errore: 'SB_SECRET_KEY mancante' }, 500);
   let body: { test?: boolean } = {};
   try { body = await req.json(); } catch (_) { /* nessun corpo: chiamata pianificata */ }
 
@@ -124,4 +135,4 @@ Deno.serve(async (req) => {
     });
   }
   return json({ ora: `${giorno} ${Math.floor(minuti / 60)}:${String(minuti % 60).padStart(2, '0')}`, candidati: daAvvisare.length, inviate });
-});
+}
