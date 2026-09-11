@@ -4093,15 +4093,17 @@ import * as repo from './js/repo.js';
         let cell='<div class="cal-col '+(isT?'today':'')+'" data-date="'+dISO+'">';
         cell+=bandHTML(presSl[wd],'pres')+bandHTML(studySl[wd],'study')+bandHTML({start:(presSl[wd]||{}).mcs,end:(presSl[wd]||{}).mce},'mc');
         for(let h=H0;h<H1;h++) cell+='<div class="hr"></div>';
-        const evs=dayEventsFor(dISO).map(ev=>({ev,s:Math.max(H0*60,t2m(ev.start)),e:Math.min(H1*60,t2m(ev.end))})).filter(o=>o.e>o.s);
+        /* gli eventi fuori dalla fascia visibile (es. finiti alle 5:00 per un trascinamento sbagliato)
+           si mostrano comunque, ancorati al bordo, cosi' si possono aprire e correggere */
+        const evs=dayEventsFor(dISO).map(ev=>{const s0=t2m(ev.start)??0,e0=t2m(ev.end)??0; let s=Math.max(H0*60,s0),e=Math.min(H1*60,e0),fuori=false; if(e<=s){fuori=true; if(e0<=H0*60){s=H0*60;e=s+30;} else {e=H1*60;s=e-30;}} return {ev,s,e,fuori};});
         layoutDay(evs);
         evs.forEach(o=>{
           const top=(o.s-H0*60)/60*HH, hgt=Math.max(18,(o.e-o.s)/60*HH-2);
           const w=100/o.cols, left=o.col*w, color=evColor(o.ev);
-          cell+='<div class="event" data-ev="'+o.ev.id+'" data-date="'+dISO+'" style="top:'+top+'px;height:'+hgt+'px;left:calc('+left+'% + 2px);width:calc('+w+'% - 6px);background:'+color+'">'
+          cell+='<div class="event'+(o.fuori?' fuori':'')+'" data-ev="'+o.ev.id+'" data-date="'+dISO+'" style="top:'+top+'px;height:'+hgt+'px;left:calc('+left+'% + 2px);width:calc('+w+'% - 6px);background:'+color+'">'
             +(o.ev.mode==='weekly'?'<span class="rep">↻</span>':'')
             +'<div class="et">'+esc(evName(o.ev))+'</div>'
-            +'<div class="eh">'+o.ev.start+'–'+o.ev.end+'</div></div>';
+            +'<div class="eh">'+(o.fuori?'⚠ ':'')+o.ev.start+'–'+o.ev.end+'</div></div>';
         });
         cell+='</div>'; cols+=cell;
       }

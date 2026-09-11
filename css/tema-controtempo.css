@@ -518,3 +518,7 @@ p.sec-d[data-aiuto],p.group-note[data-aiuto]{margin-top:6px}
 }
 #appRoot .cal-body{padding-top:8px}
 #appRoot .cal-gutter .hr:first-child span{top:-3px}
+
+/* evento fuori dalla fascia 8-21: ancorato al bordo, da correggere */
+.event.fuori{outline:2px dashed var(--yellow);outline-offset:-2px}
+.event.fuori .eh{color:var(--yellow);font-weight:700}
