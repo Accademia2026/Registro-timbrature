@@ -4225,10 +4225,17 @@ import * as repo from './js/repo.js';
         const dur=d.origEnd-d.origStart;
         let ns=Math.max(H0*60,Math.min(LIMITE_ATTIVITA-dur, d.origStart+deltaMin)), ne=ns+dur;
         if(d.origStart+deltaMin+dur>LIMITE_ATTIVITA)toast('Le attività non possono andare oltre le 21:00');
-        evObj.start=pad(Math.floor(ns/60))+':'+pad(ns%60);
-        evObj.end=pad(Math.floor(ne/60))+':'+pad(ne%60);
-        if(dayShift!==0)evObj.date=iso(addDays(parseISO(evObj.date),dayShift));
-        repo.updateEvento(evObj.id,evObj).catch(()=>{}); scheduleNotifications();
+        const nStart=pad(Math.floor(ns/60))+':'+pad(ns%60), nEnd=pad(Math.floor(ne/60))+':'+pad(ne%60);
+        const nDate=dayShift!==0?iso(addDays(parseISO(evObj.date),dayShift)):evObj.date;
+        if(nStart!==evObj.start||nDate!==evObj.date){
+          /* uno spostamento col dito puo' essere involontario: si chiede conferma */
+          const dd=parseISO(nDate);
+          const quando=DAYNAMES[(dd.getDay()+6)%7]+' '+pad(dd.getDate())+'/'+pad(dd.getMonth()+1)+', '+nStart+'–'+nEnd;
+          if(confirm('Spostare «'+evName(evObj)+'» a '+quando+'?')){
+            evObj.start=nStart; evObj.end=nEnd; evObj.date=nDate;
+            repo.updateEvento(evObj.id,evObj).catch(()=>{}); scheduleNotifications();
+          }
+        }
       }
       window._justDragged=true; setTimeout(()=>window._justDragged=false,350);
       renderAttivita();
