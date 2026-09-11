@@ -3942,6 +3942,19 @@ import * as repo from './js/repo.js';
       document.getElementById('kpScrim').classList.add('is-open');
       view.classList.add('kp-open');
     }
+    /* la barretta in alto al tastierino: trascinandola in basso si chiude */
+    (function(){
+      const k=document.getElementById('keypad'); if(!k)return;
+      let y0=null, dy=0;
+      k.addEventListener('pointerdown',e=>{
+        if(!e.target.closest('.grab,.kphead'))return;
+        y0=e.clientY; dy=0; k.style.transition='none';
+        try{ k.setPointerCapture(e.pointerId); }catch(_){}
+      });
+      k.addEventListener('pointermove',e=>{ if(y0==null)return; dy=Math.max(0,e.clientY-y0); k.style.transform='translateY('+dy+'px)'; });
+      const fine=()=>{ if(y0==null)return; y0=null; k.style.transition=''; k.style.transform=''; if(dy>70)closeKeypad(); dy=0; };
+      k.addEventListener('pointerup',fine); k.addEventListener('pointercancel',fine);
+    })();
     function closeKeypad(){
       finalizeField();
       if(kpField)kpField.classList.remove('is-active');
