@@ -429,10 +429,92 @@ html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--mc:#b9a3e6;--mc-w
 
 /* Orario di lavoro e Impostazioni condividono la pagina: si vede solo la parte giusta */
 #view.solo-orario .sez-imp,#view.solo-imp .sez-orario{display:none}
-#view.solo-orario .sez-orario>.sec-h{display:none}
 .iconbtn svg{display:block}
 @media (max-width:480px){
   .topbar-right{gap:8px}
   .balance-chip{padding:8px 12px}
   #btnImpostazioni{width:40px;height:40px}
 }
+
+/* =================== 1.1 — revisione UX =================== */
+/* barra in alto: una riga sola, compatta */
+.topbar{padding:8px 16px;min-height:56px;gap:10px;flex-wrap:nowrap}
+.topbar h1{font-size:18px;line-height:1.2;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topbar h1::after{display:none}
+.topbar .crumb{display:none}
+.topbar-right{gap:8px;flex-wrap:nowrap;flex:none}
+.balance-chip{padding:6px 12px}
+@media (max-width:899px){
+  #temaToggle,#btnImpostazioni,#btnLogout{display:none}
+}
+@media (min-width:900px){ #btnMenu{display:none} }
+.menu-app .btn{min-height:46px;font-size:15px}
+
+/* titoli delle viste: una volta sola, meno alti */
+.ios .large-title{font-size:26px}
+.ios .hero-title{padding-top:2px;padding-bottom:8px}
+
+/* Timbra adesso: orologio grande e bottone a tutta larghezza */
+.card:has(#btnTimbra)>div{flex-direction:column;align-items:stretch;gap:12px}
+#liveClock{font-size:40px;letter-spacing:.5px}
+#btnTimbra{width:100%;min-height:52px;font-size:16px;justify-content:center}
+
+/* Timbrature: riquadro settimana su tre valori grandi */
+.sum-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;align-items:start}
+.sum-big{font-size:24px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.sum-studio{margin-top:10px;font-size:12.5px}
+.sum-studio b{font-weight:700;color:var(--ink);margin-left:4px}
+.ios .authbox{border-left:3px solid var(--teal);font-size:14px;padding:14px 16px}
+.wa-toggle{font-size:13px}
+
+/* aria e leggibilita' */
+.ios .row{min-height:48px}
+.wtag{font-size:12px;padding:4px 10px}
+.wtags{gap:8px}
+.wtag-more{cursor:pointer;font-family:inherit}
+.chip-mini{font-size:12px}
+.ios .card{padding:16px 18px}
+
+/* testi guida ripiegati dietro un "?" */
+.aiuto-btn{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1px solid var(--ctm-linea);background:transparent;color:var(--ink-soft);font-size:12px;font-weight:700;margin-left:8px;vertical-align:middle;cursor:pointer;font-family:inherit;line-height:1;padding:0}
+.aiuto-btn.is-on{background:var(--teal-wash);color:var(--teal);border-color:var(--teal)}
+p.sec-d[data-aiuto],p.group-note[data-aiuto]{margin-top:6px}
+.group-header .aiuto-btn{text-transform:none;letter-spacing:0}
+
+/* Impostazioni a fisarmonica */
+.imp-h{display:flex;align-items:center;cursor:pointer;padding:14px 0;margin:0;border-top:1px solid var(--ctm-linea-soft);font-size:17px;-webkit-tap-highlight-color:transparent}
+.imp-h:first-child{border-top:0}
+.imp-h::after{content:"\203A";margin-left:auto;color:var(--ink-soft);font-size:20px;transition:transform .15s}
+.imp-h.is-open::after{transform:rotate(90deg)}
+.imp-body{padding:2px 0 18px}
+
+/* Permessi: le richieste come schede */
+.req-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 16px}
+.req-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px;border-radius:12px;border:1px solid var(--ctm-linea);background:var(--ctm-carta);text-align:left;font-family:inherit;color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.req-card:active{background:var(--teal-wash)}
+.req-ic{font-size:22px;line-height:1}
+.req-t{font-weight:700;font-size:14px;margin-top:4px}
+.req-s{font-size:12px;color:var(--ink-soft);line-height:1.3}
+/* Timbrature: titolo della settimana e frecce sulla stessa riga */
+.ios .hero-title{flex-wrap:nowrap;align-items:center}
+.ios .hero-title .large-title{font-size:21px}
+.ios .hero-title p{margin:2px 0 0;font-size:12.5px}
+.ios .navbtn{min-width:36px;height:36px}
+.hero-sub p{margin:0;font-size:12.5px;color:var(--ink-soft)}
+.imp-h:not(.is-open) .aiuto-btn{display:none}
+.wa-toggle{padding:6px 12px;min-height:34px}
+/* Riepilogo: attivita' di oggi */
+.ios .oggi-row{cursor:pointer;gap:10px}
+.oggi-ora{display:flex;flex-direction:column;min-width:44px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.oggi-ora small{font-weight:400;font-size:11px;color:var(--ink-soft)}
+.oggi-dot{width:10px;height:10px;border-radius:3px;flex:none}
+.oggi-fatta .row__label,.oggi-fatta .oggi-ora{opacity:.55}
+.ios .oggi-row .row__label{flex:1;text-align:left;justify-content:flex-start}
+/* calendario: la riga dei giorni si ferma sotto la barra in alto, non sopra */
+#appRoot .cal-head{top:0;z-index:6}
+@media (max-width:760px){
+  #appRoot .cal-wrap,#appRoot .cal{overflow:visible}   /* cosi la riga dei giorni si aggancia alla pagina, sotto la barra */
+  #appRoot .cal-head{top:var(--topbar-h,56px)}
+}
+#appRoot .cal-body{padding-top:8px}
+#appRoot .cal-gutter .hr:first-child span{top:-3px}

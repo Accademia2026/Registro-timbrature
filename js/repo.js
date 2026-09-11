@@ -349,6 +349,24 @@ export async function deleteRichiesta(id) {
   check('eliminazione richiesta', await supabase.from('richieste').delete().eq('id', id));
 }
 
+/* ============================================================ sessioni d'esame
+   Elenco consultabile (tabella sessioni_esami, script 10). */
+export async function listSessioni() {
+  const { data, error } = await supabase.from('sessioni_esami')
+    .select('id,titolo,dal,al,nota').order('dal', { ascending: true });
+  if (error) throw error;
+  return (data || []).map((r) => ({ ...r, id: String(r.id) }));
+}
+export async function saveSessione(s) {
+  const row = { titolo: s.titolo, dal: s.dal, al: s.al, nota: orNull(s.nota) };
+  if (s.id) { check('salvataggio sessione', await supabase.from('sessioni_esami').update(row).eq('id', s.id)); return s.id; }
+  const r = await supabase.from('sessioni_esami').insert(row).select('id').single();
+  return String(check('salvataggio sessione', r).id);
+}
+export async function deleteSessione(id) {
+  check('eliminazione sessione', await supabase.from('sessioni_esami').delete().eq('id', id));
+}
+
 /* ============================================================ notifiche push
    Iscrizioni dei dispositivi (tabella push_subscriptions, script 08) e
    chiamata alla funzione server "invia-avvisi". */

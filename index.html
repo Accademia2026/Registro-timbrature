@@ -597,6 +597,7 @@ document.addEventListener('gesturechange',function(e){e.preventDefault();},{pass
           </div>
           <button class="iconbtn" id="btnImpostazioni" title="Impostazioni" aria-label="Impostazioni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" width="18" height="18"><circle cx="12" cy="12" r="3"></circle><path d="M19 12a7 7 0 0 0-.1-1l2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7 7 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.6c.07-.33.1-.66.1-1z"></path></svg></button>
           <button class="iconbtn" id="btnLogout" title="Esci" style="width:auto;padding:0 14px;font-size:13px;font-weight:600">Esci</button>
+          <button class="iconbtn" id="btnMenu" title="Altro" aria-label="Altro"><svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><circle cx="5" cy="12" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle></svg></button>
         </div>
       </header>
       <div class="content" id="view"></div>
@@ -3266,6 +3267,42 @@ import * as repo from './js/repo.js';
       renderRiepilogo();
     }
 
+    /* ---------- 1.1: testi guida ripiegati, etichette "+n", sezioni Impostazioni a fisarmonica ---------- */
+    let impAperte={};
+    try{ impAperte=JSON.parse(localStorage.getItem('ctm:imp-aperte')||'{}')||{}; }catch(_){}
+    function pieghaAiuti(root){
+      /* i paragrafi esplicativi diventano un "?" accanto al titolo: un tocco li apre */
+      root.querySelectorAll('p.sec-d:not([data-aiuto]), p.group-note:not([data-aiuto])').forEach(p=>{
+        p.dataset.aiuto='1'; p.hidden=true;
+        const prev=p.previousElementSibling;
+        const b=document.createElement('button'); b.type='button'; b.className='aiuto-btn'; b.title='Spiegazione'; b.textContent='?';
+        b.onclick=e=>{e.stopPropagation(); p.hidden=!p.hidden; b.classList.toggle('is-on',!p.hidden);};
+        if(prev&&(prev.classList.contains('sec-h')||prev.classList.contains('group-header'))) prev.appendChild(b);
+        else if(prev&&prev.classList.contains('group')&&prev.previousElementSibling&&prev.previousElementSibling.classList.contains('group-header')) prev.previousElementSibling.appendChild(b);
+        else p.parentNode.insertBefore(b,p);
+      });
+      root.querySelectorAll('.wtag-more:not([data-b])').forEach(b=>{ b.dataset.b='1'; b.onclick=e=>{e.stopPropagation(); const r=b.nextElementSibling; if(r){r.hidden=false;} b.remove();}; });
+    }
+    function fisarmonicaImpostazioni(){
+      if(current!=='impostazioni')return;
+      const sez=view.querySelector('.sez-imp:last-of-type'); if(!sez||sez.dataset.fisa)return; sez.dataset.fisa='1';
+      const prima=view.querySelector('.sez-imp'); [prima,sez].forEach(s=>{ if(!s||s.dataset.fisaDone)return; s.dataset.fisaDone='1';
+        const figli=[...s.children]; let corpo=null, key=null;
+        figli.forEach(el=>{
+          if(el.classList.contains('sec-h')){
+            key=el.textContent.replace(/\?$/,'').trim(); const ap=!!impAperte[key];
+            el.classList.add('imp-h'); el.classList.toggle('is-open',ap); el.dataset.key=key;
+            corpo=document.createElement('div'); corpo.className='imp-body'; corpo.hidden=!ap; s.insertBefore(corpo, el.nextSibling);
+            el.onclick=ev=>{ if(ev.target.closest('.aiuto-btn'))return; const o=corpo.hidden; corpo.hidden=!o; el.classList.toggle('is-open',o); impAperte[key]=o; try{localStorage.setItem('ctm:imp-aperte',JSON.stringify(impAperte));}catch(_){} };
+            return;
+          }
+          if(el.classList.contains('divider')){ corpo=null; el.remove(); return; }
+          if(el.querySelector&&el.querySelector('#saveSet')){ corpo=null; return; }   /* la riga Salva/Azzera resta sempre visibile */
+          if(corpo) corpo.appendChild(el);
+        });
+      });
+    }
+    new MutationObserver(()=>{ pieghaAiuti(view); fisarmonicaImpostazioni(); }).observe(document.getElementById('view'),{childList:true});
     function setView(v){
       current=v;
       view.classList.toggle('bare', v==='registro'||v==='riepilogo');
@@ -3339,7 +3376,11 @@ import * as repo from './js/repo.js';
       const goalLeft=owk?Math.min(100,(owk/Math.max(tot,owk))*100):100;
       const fcls=cc>0?'meter__fill--pos':(cc<0?'meter__fill--neg':'');
       const vcls=cc<0?'neg':(cc>0?'pos':'muted'), vtxt=cc===0?'in pari':fmtHM(cc,true);
-      const tags=etichetteSettimana(mon).map(([cls,t])=>'<span class="wtag wtag--'+cls+'">'+esc(t)+'</span>').join('');
+      /* al massimo tre etichette in vista: le altre sotto "+n", un tocco le mostra */
+      const tutte=etichetteSettimana(mon);
+      const mk=([cls,t])=>'<span class="wtag wtag--'+cls+'">'+esc(t)+'</span>';
+      const tags=tutte.slice(0,3).map(mk).join('')
+        +(tutte.length>3?'<button class="wtag wtag--mut wtag-more" data-more>+'+(tutte.length-3)+'</button><span class="wtag-rest" hidden>'+tutte.slice(3).map(mk).join('')+'</span>':'');
       return '<div class="weekrow"><span class="weekrow__k">'+rangeSettimana(mon)+'<small>'+fmtHM(tot)+' su '+fmtHM(owk)+'</small></span>'
         +'<span class="meter"><span class="meter__fill '+fcls+'" style="width:'+Math.min(100,pct+overPct)+'%"></span><span class="meter__goal" style="left:'+goalLeft+'%"></span></span>'
         +'<span class="weekrow__v '+vcls+'">'+vtxt+'</span></div>'
@@ -3435,6 +3476,22 @@ import * as repo from './js/repo.js';
       else if(key==='omessa') elenco('omessa','gg');
       return '<div class="dett-out">'+(righe.length?righe.join(''):'<div class="row dett-row"><span class="row__label muted">Nessuna settimana</span></div>')+'</div>';
     }
+    /* attivita' del giorno dal calendario: in corso, da fare, gia' svolte */
+    function oggiHTML(dISO,now){
+      const evs=dayEventsFor(dISO).slice().sort((a,b)=>(t2m(a.start)??0)-(t2m(b.start)??0));
+      if(!evs.length) return '<div class="row"><span class="row__label muted">Nessuna attività in calendario per oggi.</span></div>';
+      const adesso=now.getHours()*60+now.getMinutes();
+      return evs.map(ev=>{
+        const s=t2m(ev.start)??0, e=t2m(ev.end)??0;
+        const stato=e<=adesso?'fatta':(s<=adesso?'incorso':'dafare');
+        const tag=stato==='incorso'?'<span class="wtag wtag--pos">in corso</span>':(stato==='fatta'?'<span class="wtag wtag--mut">svolta</span>':'');
+        return '<div class="row oggi-row'+(stato==='fatta'?' oggi-fatta':'')+'" data-oggi-ev="'+ev.id+'">'
+          +'<span class="oggi-ora num">'+ev.start+'<small>'+ev.end+'</small></span>'
+          +'<span class="oggi-dot" style="background:'+evColor(ev)+'"></span>'
+          +'<span class="row__label">'+esc(evName(ev))+(ev.note?'<small class="muted"> · '+esc(ev.note)+'</small>':'')+'</span>'
+          +tag+'</div>';
+      }).join('');
+    }
     function renderRiepilogo(){
       const bal=runningBalance();
       const wks=weeksWithData();
@@ -3463,7 +3520,7 @@ import * as repo from './js/repo.js';
 
       view.innerHTML=
         '<div class="ios">'
-        +'<div class="hero-title" style="display:block"><h1 class="large-title">Riepilogo</h1><p>'+(DB.yearLabel?('Anno accademico '+DB.yearLabel):'Registro presenze')+'</p></div>'
+        +'<div class="hero-title hero-sub" style="display:block"><p>'+(DB.yearLabel?('Anno accademico '+DB.yearLabel):'Registro presenze')+'</p></div>'
         +'<div class="stack">'
           +'<div><div class="group-header">Timbra adesso</div><div class="card">'
             +'<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">'
@@ -3472,6 +3529,7 @@ import * as repo from './js/repo.js';
               +'<button class="btn btn--filled btn--pill" id="btnTimbra" '+(slot?'':'disabled')+'>'+(slot?('Timbra '+slot.l.toLowerCase()):'Giornata completa')+'</button>'
             +'</div>'
           +'</div></div>'
+          +'<div><div class="group-header">Attività di oggi</div><div class="group">'+oggiHTML(tkey,now)+'</div></div>'
           +'<div><div class="group-header">Andamento</div><div class="group">'
             +'<div class="row row--tap gh-tap'+(riepAperti.andamento?' row--open':'')+'" data-sez="andamento"><span class="row__label">Saldo ore complessivo</span><span class="row__value"><b class="'+(bal<0?'neg':'pos')+'">'+fmtHM(bal,true)+'</b> <small class="muted">· '+wks.length+' settimane</small></span></div>'
           +'<div class="gh-body"'+(riepAperti.andamento?'':' hidden')+'>'
@@ -3527,6 +3585,7 @@ import * as repo from './js/repo.js';
       view.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
       const btn=document.getElementById('btnTimbra');
       if(btn) btn.onclick=doTimbra;
+      view.querySelectorAll('[data-oggi-ev]').forEach(r=>r.onclick=()=>{const ev=DB.events.find(x=>x.id===r.dataset.oggiEv); if(ev)schedaEvento(ev);});
       clearInterval(clockTimer);
       clockTimer=setInterval(()=>{
         const el=document.getElementById('liveClock');
@@ -3692,7 +3751,7 @@ import * as repo from './js/repo.js';
       const allSkipped = wkDays.length>0 && wkDays.every(k=>isSkipped(k));
       const weekActions = '<div class="linkrow" style="margin:0 16px">'+( allSkipped
           ? '<span class="muted">Settimana rimossa.</span><button class="ilink" id="waRestore">Ripristina settimana</button>'
-          : '<span class="muted">Azioni settimana:</span><button class="ilink" id="waFerie">Tutta ferie</button><button class="idanger" id="waRemove">Rimuovi settimana</button>' )+'</div>';
+          : '<button class="ilink wa-toggle" id="waMenu">Azioni settimana ⋯</button><span id="waBox" hidden><button class="ilink" id="waFerie">Tutta ferie</button><button class="idanger" id="waRemove">Rimuovi settimana</button></span>' )+'</div>';
 
       const pctFill=obl?Math.min(100,(Math.min(tot,obl)/obl)*100):0;
       const overPct=tot>obl&&obl?Math.min(35,((tot-obl)/obl)*100):0;
@@ -3708,12 +3767,12 @@ import * as repo from './js/repo.js';
             +'<button class="navbtn" id="wNext" aria-label="settimana successiva">\u203a</button>'
           +'</div></div>'
         +'<div class="stack">'
-          +'<div class="card"><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;align-items:start">'
-            +'<div><div class="foot muted">Presenza</div><div class="num sum-v" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(tot)+'</div></div>'
-            +'<div><div class="foot muted">Dovute</div><div class="num sum-v" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(obl)+'</div></div>'
-            +'<div><div class="foot muted">Credito</div><div class="num sum-v '+(c<0?'neg':(wi.credito>0?'pos':''))+'" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(c<0?c:wi.credito,true)+'</div></div>'
-            +'<div><div class="foot muted">Studio</div><div class="num" id="sumStudio" style="font-size:var(--t-title3);font-weight:600">'+fmtHM(weekStudy(weekCursor))+'</div></div>'
+          +'<div class="card sum-card"><div class="sum-grid">'
+            +'<div><div class="foot muted">Presenza</div><div class="num sum-v sum-big">'+fmtHM(tot)+'</div></div>'
+            +'<div><div class="foot muted">Dovute</div><div class="num sum-v sum-big">'+fmtHM(obl)+'</div></div>'
+            +'<div><div class="foot muted">Credito</div><div class="num sum-v sum-big '+(c<0?'neg':(wi.credito>0?'pos':''))+'">'+fmtHM(c<0?c:wi.credito,true)+'</div></div>'
           +'</div>'
+          +'<div class="sum-studio foot muted">Studio <b class="num" id="sumStudio">'+fmtHM(weekStudy(weekCursor))+'</b></div>'
           +'<div style="display:flex;align-items:center;gap:12px;margin-top:14px">'
             +'<span class="meter" style="flex:1"><span class="meter__fill '+(c>0?'meter__fill--pos':(c<0?'meter__fill--neg':''))+'" style="width:'+Math.min(100,pctFill+overPct)+'%"></span><span class="meter__goal" style="left:'+goalLeft+'%"></span></span>'
             +'<span class="badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''))+'">'+(c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari'))+'</span>'
@@ -3760,6 +3819,7 @@ import * as repo from './js/repo.js';
         delete DB.skipDays[k];
         saveDay(k); refreshChip(); renderRegistro();
       });
+      const waMenu=document.getElementById('waMenu'); if(waMenu)waMenu.onclick=()=>{const b=document.getElementById('waBox'); b.hidden=!b.hidden; waMenu.hidden=!b.hidden;};
       const waRemove=document.getElementById('waRemove'); if(waRemove)waRemove.onclick=()=>{
         if(!confirm('Rimuovere l\'intera settimana come giornate lavorative? Gli orari inseriti verranno cancellati e la settimana non peserà sull\'obbligo.'))return;
         for(let i=0;i<7;i++){const dd=addDays(mon,i),k=iso(dd); if(expectedFor(k)>0){DB.skipDays[k]=true;delete DB.entries[k];saveDay(k);}}
@@ -4054,7 +4114,8 @@ import * as repo from './js/repo.js';
           +'</div>'
         +'</div>'
         +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc(evName(appunti.ev))+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
-        +'<p class="diary-intro">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana. <span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot mc"></span> Masterclass. <button class="linkbtn" id="btnIcs" style="padding:2px 6px">⤓ Esporta per Apple/Google Calendar</button></p>'
+        +'<p class="diary-intro"><span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot mc"></span> Masterclass <button class="linkbtn" id="btnIcs" style="padding:2px 6px;margin-left:8px">⤓ Esporta calendario</button></p>'
+        +'<p class="sec-d">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana.</p>'
         +'<div class="cal-wrap"><div class="cal"><div class="cal-head">'+head+'</div><div class="cal-body">'+gutter+cols+'</div></div></div>';
     }
     function wireCalendar(){
@@ -4577,10 +4638,14 @@ import * as repo from './js/repo.js';
         +'</div>';
       }).join('');
       view.innerHTML=
-        '<h2 class="sec-h">Monte permessi e congedi</h2>'
-        +'<p class="sec-d">Il fruito si aggiorna da solo in base alle attività registrate. Le ferie consumano prima quelle dell’anno precedente, poi quelle in corso. Tocca una voce per vedere quando l’hai usata. I limiti si modificano in Impostazioni.</p>'
-        +'<div class="setrow" style="margin:0 0 10px;gap:8px"><button class="btn" id="btnRichiesta">Richiedi ferie o permesso…</button><button class="btn ghost" id="btnRiposo">Richiedi riposo compensativo…</button></div>'
+        '<h2 class="sec-h">Richieste alla segreteria</h2>'
+        +'<div class="req-grid">'
+          +'<button class="req-card" id="btnRichiesta"><span class="req-ic">📝</span><span class="req-t">Nuova richiesta</span><span class="req-s">Ferie, festività, permessi, malattia</span></button>'
+          +'<button class="req-card" id="btnRiposo"><span class="req-ic">⏱️</span><span class="req-t">Riposo compensativo</span><span class="req-s">Ore di straordinario da recuperare</span></button>'
+        +'</div>'
         +'<div class="subh" style="margin:6px 0 2px">Richieste inviate</div><div id="richiesteBox" class="sch-list" style="margin-bottom:16px"><p class="hint" style="margin:6px 0 0">Caricamento…</p></div>'
+        +'<h2 class="sec-h" style="margin-top:22px">Monte permessi e congedi</h2>'
+        +'<p class="sec-d">Il fruito si aggiorna da solo in base alle attività registrate. Le ferie consumano prima quelle dell’anno precedente, poi quelle in corso. Tocca una voce per vedere quando l’hai usata. I limiti si modificano in Impostazioni.</p>'
         +'<div class="perm-grid">'+cards+'</div>'
         +'<div class="divider"></div>'
         +'<div class="perm" data-perm="__omesse" style="max-width:340px;cursor:pointer"><div class="top"><span class="name">Omesse timbrature</span><span class="unit">conteggio</span></div>'
@@ -5100,6 +5165,46 @@ import * as repo from './js/repo.js';
       toast('Modulo pronto · indirizzo '+EMAIL_SEGRETERIA+' copiato');
     }
 
+    /* ---------- Sessioni d'esame (elenco consultabile nella sezione Orario) ---------- */
+    async function renderSessioni(){
+      const box=document.getElementById('esamiBox'); if(!box)return;
+      let rows;
+      try{ rows=await repo.listSessioni(); }
+      catch(_){ box.innerHTML='<p class="hint" style="margin:8px 0">Elenco non disponibile (tabella sessioni assente o senza connessione).</p>'; return; }
+      if(!rows.length){ box.innerHTML='<p class="hint" style="margin:8px 0">Nessuna sessione inserita.</p>'; return; }
+      const oggi=iso(new Date());
+      box.innerHTML=rows.map(s=>{
+        const stato=s.al<oggi?'passata':(s.dal<=oggi?'in corso':'');
+        const gg=Math.round((parseISO(s.al)-parseISO(s.dal))/86400000)+1;
+        return '<div class="archrow" data-sess="'+s.id+'" style="cursor:pointer'+(stato==='passata'?';opacity:.6':'')+'">'
+          +'<b>'+esc(s.titolo)+'</b>'+(stato==='in corso'?'<span class="badge-st">in corso</span>':'')
+          +'<span class="muted" style="flex:1 1 100%">'+dataItFull(s.dal)+(s.al!==s.dal?' – '+dataItFull(s.al):'')+' · '+gg+(gg===1?' giorno':' giorni')+(s.nota?' · '+esc(s.nota):'')+'</span>'
+          +'</div>';
+      }).join('');
+      box.querySelectorAll('[data-sess]').forEach(el=>el.onclick=()=>apriSessione(rows.find(x=>x.id===el.dataset.sess)));
+    }
+    function apriSessione(s){
+      const oggi=iso(new Date());
+      modalBg.innerHTML='<div class="modal"><h3>'+(s?'Sessione d’esame':'Nuova sessione d’esame')+'</h3><div class="mbody">'
+        +'<div class="mfield"><label>Titolo</label><input type="text" id="ssTitolo" value="'+esc(s?s.titolo:'')+'" placeholder="es. Sessione estiva"></div>'
+        +'<div class="mrow"><div class="mfield"><label>Dal</label><input type="date" id="ssDal" value="'+(s?s.dal:oggi)+'"></div><div class="mfield"><label>Al</label><input type="date" id="ssAl" value="'+(s?s.al:oggi)+'"></div></div>'
+        +'<div class="mfield"><label>Note</label><input type="text" id="ssNota" value="'+esc(s&&s.nota?s.nota:'')+'" placeholder="facoltative"></div>'
+        +'</div><div class="mfoot">'+(s?'<button class="idanger" id="ssElimina">Elimina</button>':'')+'<span class="spacer"></span><button class="ilink" id="ssAnnulla">Annulla</button><button class="btn" id="ssSalva">Salva</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('ssAnnulla').onclick=closeModal;
+      document.getElementById('ssDal').onchange=()=>{const a=document.getElementById('ssAl'); if(a.value<document.getElementById('ssDal').value)a.value=document.getElementById('ssDal').value;};
+      document.getElementById('ssSalva').onclick=async()=>{
+        const d={id:s?s.id:null, titolo:document.getElementById('ssTitolo').value.trim(), dal:document.getElementById('ssDal').value, al:document.getElementById('ssAl').value, nota:document.getElementById('ssNota').value.trim()};
+        if(!d.titolo){toast('Serve un titolo');return;}
+        if(!d.dal||!d.al||d.al<d.dal){toast('Controlla le date');return;}
+        try{ await repo.saveSessione(d); closeModal(); renderSessioni(); toast('Sessione salvata'); }catch(_){}
+      };
+      const del=document.getElementById('ssElimina'); if(del)del.onclick=async()=>{
+        if(!confirm('Eliminare questa sessione?'))return;
+        try{ await repo.deleteSessione(s.id); closeModal(); renderSessioni(); }catch(_){}
+      };
+    }
+
     /* ---------- Impostazioni ---------- */
     const SD_=['lunedì','martedì','mercoledì','giovedì','venerdì','sabato','domenica'];
     const IDX_=[1,2,3,4,5,6]; /* lun-sab: niente domenica */
@@ -5539,6 +5644,10 @@ import * as repo from './js/repo.js';
         +'<h2 class="sec-h">Orario di lavoro · 36 ore</h2>'
         +'<p class="sec-d">Tocca un giorno e inserisci le fasce di <b>presenza</b> e di <b>studio</b>. In settimana devono fare 36 ore, senza sovrapporsi e senza superare le 9 ore al giorno.</p>'
         +'<div class="card" style="padding:14px 18px">'+orarioEditorHTML()+'</div>'
+        +'<h2 class="sec-h" style="margin-top:24px">Sessioni d’esame</h2>'
+        +'<p class="sec-d">Le sessioni d’esame dell’anno (periodo e note), sempre a portata di mano per pianificare presenze e straordinario.</p>'
+        +'<div class="card" style="padding:6px 16px 14px"><div id="esamiBox" class="sch-list"><p class="hint" style="margin:8px 0">Caricamento…</p></div>'
+          +'<div class="setrow" style="margin:12px 0 0"><button class="btn ghost" id="btnEsame">+ Aggiungi sessione</button></div></div>'
         +'</section><section class="sez-imp">'
         +'<h2 class="sec-h">Limiti permessi</h2>'
         +'<p class="sec-d"><b>Diritto</b> = spettanza annua · <b>Già fruito</b> = quanto consumato prima dell’app. «Valori CCNL» carica i riferimenti del CCNL Funzionari AFAM (ferie: regola per orario su 6 giorni e ≥3 anni di servizio — adatta il numero al tuo caso). Attenzione: i vincoli mensili, per evento e di coppia restano a tua cura.</p>'
@@ -5666,6 +5775,8 @@ import * as repo from './js/repo.js';
       caricaJsPDF().catch(()=>{});
       view.querySelectorAll('[data-pdforario]').forEach(b=>b.onclick=()=>{ commitOrario(); pdfOrario(+b.dataset.pdforario); });
       const bes=document.getElementById('btnExpSeg'); if(bes)bes.onclick=apriEsportaSegreteria;
+      const be=document.getElementById('btnEsame'); if(be)be.onclick=()=>apriSessione(null);
+      renderSessioni();
       /* notifiche push */
       const pOn=document.getElementById('pushOn'); if(pOn)pOn.onclick=attivaPush;
       const pOff=document.getElementById('pushOff'); if(pOff)pOff.onclick=disattivaPush;
@@ -5788,6 +5899,20 @@ import * as repo from './js/repo.js';
 
     document.querySelectorAll('#nav button,#mobnav button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
     document.getElementById('btnImpostazioni').onclick=()=>setView('impostazioni');
+    /* menu "altro" della barra: tema, impostazioni, esci (su telefono) */
+    document.getElementById('btnMenu').onclick=()=>{
+      const scuro=document.documentElement.dataset.theme==='dark';
+      modalBg.innerHTML='<div class="modal menu-app"><div class="mbody" style="gap:8px;padding-top:18px">'
+        +'<button class="btn ghost" id="maTema" style="width:100%;justify-content:flex-start">'+(scuro?'☀️ Tema chiaro':'🌙 Tema scuro')+'</button>'
+        +'<button class="btn ghost" id="maImp" style="width:100%;justify-content:flex-start">⚙️ Impostazioni</button>'
+        +'<button class="btn ghost" id="maEsci" style="width:100%;justify-content:flex-start">🚪 Esci</button>'
+        +'</div><div class="mfoot"><span class="spacer"></span><button class="btn ghost" id="maChiudi">Chiudi</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('maChiudi').onclick=closeModal;
+      document.getElementById('maTema').onclick=()=>{closeModal();document.getElementById('temaToggle').click();};
+      document.getElementById('maImp').onclick=()=>{closeModal();setView('impostazioni');};
+      document.getElementById('maEsci').onclick=()=>{closeModal();document.getElementById('btnLogout').click();};
+    };
 
     /* ---------- Tema chiaro/scuro (modello Controtempo, brief §3) ----------
        Tre stati: scelta esplicita salvata (data-theme sull'elemento radice)
@@ -5880,6 +6005,9 @@ import * as repo from './js/repo.js';
     async function avviaApp(){
       gate.style.display='none';
       registraSW();      /* service worker per le notifiche push (non blocca l'avvio) */
+      /* altezza della barra in alto: serve alla riga dei giorni del calendario per fermarsi sotto di essa */
+      const misuraTopbar=()=>{const t=document.querySelector('.topbar'); if(t)document.documentElement.style.setProperty('--topbar-h', t.offsetHeight+'px');};
+      misuraTopbar(); window.addEventListener('resize',misuraTopbar);
       repo.setOnError((ctx,err)=>{
         console.error('[repo]',ctx,err);
         try{toast('⚠️ Salvataggio non riuscito: controlla la connessione');}catch(_){}
