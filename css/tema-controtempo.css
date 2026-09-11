@@ -526,3 +526,6 @@ p.sec-d[data-aiuto],p.group-note[data-aiuto]{margin-top:6px}
 /* tastierino: la barretta e la testata si possono trascinare in basso per chiudere */
 .sheet2 .grab,.sheet2 .kphead{touch-action:none;cursor:grab}
 .sheet2 .grab{height:5px;padding:8px 12px;background-clip:content-box;box-sizing:content-box;width:36px}
+
+/* avviso non bloccante nell orario (presenza oltre le 24 ordinarie) */
+.warn2.note2{background:var(--teal-wash);color:var(--teal);border-left-color:var(--teal)}

@@ -3078,6 +3078,7 @@ import * as repo from './js/repo.js';
     function isSkipped(dISO){return !!DB.skipDays[dISO];}
     /* Masterclass pianificata in orario (fascia mcs/mce nelle slot di presenza) */
     const CAP_STRA=9*60;            /* tetto straordinario settimanale */
+    const ORE_PRES_ORD=24*60;       /* presenza ordinaria contrattuale: 36h - 12h di studio */
     const ORE_MAX_SETT=45*60;       /* 36h + 9h di straordinario */
     function mcNetSlot(sl){const ds=t2m(sl&&sl.mcs),de=t2m(sl&&sl.mce);return (ds!=null&&de!=null&&de>ds)?(de-ds):0;}
     function plannedMC(mon){
@@ -3087,9 +3088,11 @@ import * as repo from './js/repo.js';
     function obligationForWeek(mon){
       const sch=scheduleForWeek(mon); let s=0; const m=parseISO(mon);
       for(let i=0;i<7;i++){const d=addDays(m,i),k=iso(d); if(isSkipped(k))continue; s+=(+sch[d.getDay()]||0);}
-      /* le ore di Masterclass pianificate oltre il tetto erodono la presenza
-         ordinaria: restano dovute (24h CCNL) e diventano debito da recuperare */
-      return s+Math.max(0,plannedMC(mon)-CAP_STRA);
+      /* le ore dovute sono al massimo le 24 ordinarie: la presenza pianificata in piu'
+         (straordinario o recupero) non diventa un obbligo. Le ore di Masterclass
+         pianificate oltre il tetto erodono la presenza ordinaria: restano dovute
+         (24h CCNL) e diventano debito da recuperare */
+      return Math.min(s,ORE_PRES_ORD)+Math.max(0,plannedMC(mon)-CAP_STRA);
     }
 
     function studyDefaultFor(date){return +studyScheduleForWeek(monOf(date))[parseISO(date).getDay()]||0;}
@@ -3408,6 +3411,63 @@ import * as repo from './js/repo.js';
       }
       return out;
     }
+    /* collegamento tra crediti e debiti/riposi: ogni credito e' un "lotto" che
+       viene consumato, dal piu' vecchio, dai debiti settimanali e dai riposi
+       compensativi; un debito senza crediti resta scoperto finche' non arriva
+       un credito nuovo. Cosi' si sa quando un debito e' stato ripianato e con
+       quali ore, e quali ore di credito sono ancora disponibili. */
+    function allocazioniSaldo(){
+      const lotti=[], debiti=[], scoperti=[];
+      const consuma=d=>{
+        let rest=d.min;
+        for(const l of lotti){ if(rest<=0)break; if(l.resto<=0)continue; const q=Math.min(l.resto,rest); l.resto-=q; rest-=q; l.usi.push({tipo:d.tipo,chiave:d.chiave,min:q}); d.coperto.push({lotto:l,min:q}); }
+        d.scoperto=rest; if(rest>0)scoperti.push(d);
+      };
+      const aggiungiLotto=l=>{
+        lotti.push(l);
+        for(const d of scoperti){ if(l.resto<=0)break; if(d.scoperto<=0)continue; const q=Math.min(l.resto,d.scoperto); l.resto-=q; d.scoperto-=q; l.usi.push({tipo:d.tipo,chiave:d.chiave,min:q}); d.coperto.push({lotto:l,min:q}); }
+      };
+      const bal0=DB.initialBalanceMin||0;
+      if(bal0>0) aggiungiLotto({tipo:'iniziale',chiave:'iniziale',min:bal0,resto:bal0,usi:[]});
+      else if(bal0<0){ const d={tipo:'debito',chiave:'iniziale',min:-bal0,coperto:[],scoperto:0}; debiti.push(d); consuma(d); }
+      let bal=bal0;
+      for(const mon of weeksWithData()){
+        const wi=weekCalc(mon,bal); bal=wi.balDopo;
+        for(let i=0;i<7;i++){ const k=iso(addDays(parseISO(mon),i)); if(isSkipped(k))continue; const c=dayComp(DB.entries[k]); if(c>0){ const d={tipo:'riposo',chiave:k,mon,min:c,coperto:[],scoperto:0}; debiti.push(d); consuma(d); } }
+        if(wi.c<0){ const d={tipo:'debito',chiave:mon,mon,min:-wi.c,coperto:[],scoperto:0}; debiti.push(d); consuma(d); }
+        if(wi.credito>0) aggiungiLotto({tipo:'credito',chiave:mon,mon,min:wi.credito,resto:wi.credito,usi:[]});
+      }
+      return {lotti,debiti,disponibili:lotti.filter(l=>l.resto>0)};
+    }
+    const etichettaChiave=(tipo,chiave)=>chiave==='iniziale'?'saldo iniziale':(tipo==='riposo'?'riposo del '+dataItFull(chiave):'settimana '+rangeSettimana(chiave));
+    function schedaMovimento(m){
+      const A=allocazioniSaldo();
+      const riga=(l,v)=>'<div class="arow"><span>'+l+'</span><b>'+v+'</b></div>';
+      let corpo='', titolo='';
+      if(m.tipo==='credito'){
+        const l=A.lotti.find(x=>x.tipo==='credito'&&x.chiave===m.mon);
+        titolo='Credito · '+rangeSettimana(m.mon);
+        corpo=riga('Ore a credito',fmtHM(m.min));
+        if(l){
+          corpo+=(l.usi.length?'<div class="subh" style="margin:10px 0 2px">Usato per</div>'+l.usi.map(u=>riga(etichettaChiave(u.tipo,u.chiave)+(u.tipo==='riposo'?' (riposo)':' (debito)'),fmtHM(u.min))).join(''):'')
+            +riga('Ancora disponibile',fmtHM(l.resto));
+        }
+      } else {
+        const lista=A.debiti.filter(d=>m.tipo==='riposo'?(d.tipo==='riposo'&&d.mon===m.mon):(d.tipo==='debito'&&d.chiave===m.mon));
+        titolo=(m.tipo==='riposo'?'Riposo compensativo · ':'Debito · ')+rangeSettimana(m.mon);
+        corpo=riga(m.tipo==='riposo'?'Ore di riposo':'Ore di debito',fmtHM(-m.min));
+        const cop={}; let scop=0;
+        lista.forEach(d=>{ d.coperto.forEach(c=>{ const k=c.lotto.tipo+'|'+c.lotto.chiave; cop[k]=(cop[k]||0)+c.min; }); scop+=d.scoperto; });
+        const voci=Object.entries(cop);
+        corpo+=(voci.length?'<div class="subh" style="margin:10px 0 2px">'+(m.tipo==='riposo'?'Ore prese da':'Ripianato con')+'</div>'+voci.map(([k,min])=>{const [t,c]=k.split('|'); return riga(t==='iniziale'?'saldo iniziale':'credito '+rangeSettimana(c),fmtHM(min));}).join(''):'')
+          +(scop>0?riga(m.tipo==='riposo'?'Senza copertura (saldo in debito)':'Ancora da ripianare',fmtHM(scop)):'');
+      }
+      modalBg.innerHTML='<div class="modal"><h3>'+esc(titolo)+'</h3><div class="mbody">'+corpo+'</div>'
+        +'<div class="mfoot"><button class="wtag wtag--link" data-openweek="'+m.mon+'" style="margin:0">Apri settimana ›</button><span class="spacer"></span><button class="btn" id="mvChiudi">Chiudi</button></div></div>';
+      modalBg.classList.add('show');
+      document.getElementById('mvChiudi').onclick=closeModal;
+      modalBg.querySelector('[data-openweek]').onclick=()=>{closeModal();weekCursor=m.mon;openDay=null;setView('registro');};
+    }
     function saldoHTML(){
       const mov=movimentiSaldo();
       const tot=t=>mov.filter(m=>m.tipo===t).reduce((s,m)=>s+m.min,0);
@@ -3422,8 +3482,10 @@ import * as repo from './js/repo.js';
       const lista=mov.filter(m=>movFiltro==='tutti'||m.tipo===movFiltro).reverse();
       const LAB={credito:'Credito',debito:'Debito',riposo:'Riposo comp.'};
       const CLS={credito:'pos',debito:'neg',riposo:'rip'};
-      const righe=lista.length?lista.map(m=>'<div class="row mov-row">'
-          +'<span class="mov-k">'+rangeSettimana(m.mon)+'<small>saldo '+fmtHM(m.bal,true)+'</small></span>'
+      const A=allocazioniSaldo();
+      const restoDi=m=>{ if(m.tipo!=='credito')return ''; const l=A.lotti.find(x=>x.tipo==='credito'&&x.chiave===m.mon); return l?(l.resto>0?' · disp. '+fmtHM(l.resto):' · usato'):''; };
+      const righe=lista.length?lista.map(m=>'<div class="row mov-row" data-mov="'+m.tipo+'|'+m.mon+'">'
+          +'<span class="mov-k">'+rangeSettimana(m.mon)+'<small>saldo '+fmtHM(m.bal,true)+esc(restoDi(m))+'</small></span>'
           +'<span class="wtag wtag--'+CLS[m.tipo]+'">'+LAB[m.tipo]+'</span>'
           +'<span class="mov-v '+(m.min<0?'neg':'pos')+'">'+fmtHM(m.min,true)+'</span>'
           +'<button class="wtag wtag--link" data-openweek="'+m.mon+'">Apri ›</button>'
@@ -3579,7 +3641,9 @@ import * as repo from './js/repo.js';
         const box=document.getElementById('saldoBox'); if(!box)return;
         bindTap(box);
         box.querySelectorAll('[data-movf]').forEach(b=>b.onclick=()=>{movFiltro=b.dataset.movf; box.innerHTML=saldoHTML(); bindSaldo();});
-        box.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
+        box.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=ev=>{ev.stopPropagation();weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
+        /* un tocco sul movimento: con quali crediti e' stato coperto, o per cosa e' stato usato */
+        box.querySelectorAll('[data-mov]').forEach(r=>r.onclick=ev=>{ if(ev.target.closest('button'))return; const [tipo,mon]=r.dataset.mov.split('|'); const m=movimentiSaldo().find(x=>x.tipo===tipo&&x.mon===mon); if(m)schedaMovimento(m); });
       };
       bindSaldo();
       view.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
@@ -5119,11 +5183,14 @@ import * as repo from './js/repo.js';
       let nome=''; try{nome=localStorage.getItem('ctm:nome')||'';}catch(_){}
       const oggi=iso(new Date());
       /* suggerimenti: le ultime settimane con straordinario a credito */
-      const sugg=weeksWithData().map(m=>[m,weekInfo(m)]).filter(([,wi])=>wi.credito>0).slice(-4).reverse();
+      /* si propongono i crediti ANCORA DISPONIBILI (non gia' usati da debiti o riposi), dal piu' vecchio */
+      const A=allocazioniSaldo();
+      const disp=A.disponibili.filter(l=>l.tipo==='credito');
+      const totDisp=A.disponibili.reduce((s,l)=>s+l.resto,0);
       const rigaOre=(i,data,ore)=>'<div class="mrow"><div class="mfield"><label>'+(i===0?'Data straordinario':'&nbsp;')+'</label><input type="date" data-rsData="'+i+'" value="'+(data||'')+'"></div><div class="mfield" style="flex:.6"><label>'+(i===0?'Ore effettuate':'&nbsp;')+'</label><input type="text" data-rsOre="'+i+'" value="'+(ore||'')+'" placeholder="es. 2h"></div></div>';
-      const righe=[0,1,2,3].map(i=>{const s=sugg[i]; return rigaOre(i, s?iso(addDays(parseISO(s[0]),3)):'', s?fmtHM(s[1].credito):'');}).join('');
+      const righe=[0,1,2,3].map(i=>{const l=disp[i]; return rigaOre(i, l?iso(addDays(parseISO(l.chiave),3)):'', l?fmtHM(l.resto):'');}).join('');
       modalBg.innerHTML='<div class="modal"><h3>Richiesta riposo compensativo</h3><div class="mbody">'
-        +'<p class="hint" style="margin:0">Le ore di straordinario già a credito vengono proposte; correggi date e ore come servono (la data va indicata per giorno).</p>'
+        +'<p class="hint" style="margin:0">Crediti ancora disponibili: <b>'+fmtHM(totDisp)+'</b>'+(disp.length?' · proposti dal più vecchio, con le ore non ancora usate; correggi date e ore come servono.':'. Nessuna settimana con credito disponibile: compila a mano.')+'</p>'
         +'<div class="mfield"><label>Nome e cognome</label><input type="text" id="rsNome" value="'+esc(nome)+'"></div>'
         +righe
         +'<div class="mrow"><div class="mfield"><label>Da fruire in data</label><input type="date" id="rsData" value="'+oggi+'"></div><div class="mfield"><label>Commutate in</label><input type="text" id="rsQuanto" placeholder="es. 1 giorno · 3 ore"></div></div>'
@@ -5375,12 +5442,17 @@ import * as repo from './js/repo.js';
         if(g.overlap)errori.push(SD_[i]+': le fasce si sovrappongono');
         if(g.tot>DAILY_CAP)errori.push(SD_[i]+': '+fmtHM(g.tot)+' supera le 9 ore');
       });
-      /* 36h = presenza + studio + Masterclass oltre il tetto (le ore erose restano dovute) */
-      const oltre=Math.max(0,mc-CAP_STRA), tot=pres+stud+oltre, totAll=pres+stud+mc;
+      /* 36h = presenza ordinaria + studio + Masterclass oltre il tetto (le ore erose restano dovute).
+         La presenza oltre le 24h ordinarie e' consentita (straordinario pianificato o recupero
+         di debito): non entra nelle ore dovute e viene solo segnalata. */
+      const avvisi=[];
+      const extra=Math.max(0,pres-ORE_PRES_ORD), presOrd=pres-extra;
+      const oltre=Math.max(0,mc-CAP_STRA), tot=presOrd+stud+oltre, totAll=pres+stud+mc;
       if(tot<ORE_SETT)errori.push('Mancano '+fmtHM(ORE_SETT-tot)+' alle 36 ore settimanali');
       if(tot>ORE_SETT)errori.push('Superi le 36 ore di '+fmtHM(tot-ORE_SETT));
       if(totAll>ORE_MAX_SETT)errori.push('Superi le 45 ore complessive di '+fmtHM(totAll-ORE_MAX_SETT));
-      return {pres,stud,mc,oltre,tot,totAll,errori,giorni};
+      if(extra>0)avvisi.push(fmtHM(extra)+' di presenza oltre le 24 ordinarie: straordinario pianificato o recupero di debito. Non diventano ore dovute: fatte, saranno ore in più da autorizzare.');
+      return {pres,presOrd,extra,stud,mc,oltre,tot,totAll,errori,avvisi,giorni};
     }
     function riassuntoGiorno(pi,wd){
       const g=giornoInfo(pi,wd);
@@ -5410,7 +5482,8 @@ import * as repo from './js/repo.js';
         +'<span><i class="kl2 s"></i>Studio <b class="mono">'+fmtHM(v.stud)+'</b></span>'
         +(v.mc?'<span><i class="kl2 m"></i>Masterclass <b class="mono">'+fmtHM(v.mc)+'</b>'+(v.oltre?' <small class="neg">+'+fmtHM(v.oltre)+' oltre il tetto</small>':'')+'</span>':'')
         +'<span class="big2 mono'+(v.tot===ORE_SETT?'':' neg')+'">'+fmtHM(v.tot)+' / 36h'+(v.mc?' <small class="'+(v.totAll>ORE_MAX_SETT?'neg':'muted')+'">· '+fmtHM(v.totAll)+' in tutto</small>':'')+'</span>'
-        +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'');
+        +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'')
+        +(v.avvisi&&v.avvisi.length?'<div class="warn2 note2">'+v.avvisi.map(esc).join('<br>')+'</div>':'');
     }
     function orarioEditorHTML(){
       if(allineaPeriodi()){ savePeriods('pres'); savePeriods('study'); }
