@@ -3961,6 +3961,7 @@ import * as repo from './js/repo.js';
 
     /* ---------- Registro attività (calendario) ---------- */
     const H0=8, H1=22, HH=46;
+    const LIMITE_ATTIVITA=21*60;   /* regola: niente attivita' oltre le 21:00 */
     const PALETTE=['#2f6f5e','#3a5ad6','#b5572a','#7a4fb5','#15807a','#b03a6e','#2d7d46','#9c6b1f','#4754c4','#c0654b'];
     const NOTIFY_OPTS=[['','Nessuno'],['0','All\'inizio'],['5','5 minuti prima'],['10','10 minuti prima'],['15','15 minuti prima'],['30','30 minuti prima'],['60','1 ora prima']];
     const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -4159,7 +4160,8 @@ import * as repo from './js/repo.js';
       const deltaMin=Math.round((dy/HH*60)/15)*15;
       if(evObj){
         const dur=d.origEnd-d.origStart;
-        let ns=Math.max(0,Math.min(24*60-dur, d.origStart+deltaMin)), ne=ns+dur;
+        let ns=Math.max(H0*60,Math.min(LIMITE_ATTIVITA-dur, d.origStart+deltaMin)), ne=ns+dur;
+        if(d.origStart+deltaMin+dur>LIMITE_ATTIVITA)toast('Le attività non possono andare oltre le 21:00');
         evObj.start=pad(Math.floor(ns/60))+':'+pad(ns%60);
         evObj.end=pad(Math.floor(ne/60))+':'+pad(ne%60);
         if(dayShift!==0)evObj.date=iso(addDays(parseISO(evObj.date),dayShift));
@@ -4213,6 +4215,7 @@ import * as repo from './js/repo.js';
     }
     async function incollaAppunti(dISO,start){
       const src=appunti.ev, dur=Math.max(15,(t2m(src.end)??0)-(t2m(src.start)??0));
+      if((t2m(start)??0)+dur>LIMITE_ATTIVITA){toast('Non è possibile programmare attività oltre le 21:00');return;}
       const nuovo={personId:src.personId,title:src.title||'',date:dISO,start,end:addMin(start,dur),mode:'single',until:null,notify:src.notify,note:src.note||'',countTeacher:!!src.countTeacher};
       try{
         nuovo.id=await repo.insertEvento(nuovo); DB.events.push(nuovo);
@@ -4305,6 +4308,7 @@ import * as repo from './js/repo.js';
       const date=document.getElementById('mDate').value, start=document.getElementById('mStart').value, end=document.getElementById('mEnd').value;
       if(!date||!start||!end){toast('Compila data e orari');return;}
       if(t2m(end)<=t2m(start)){toast('La fine deve essere dopo l\'inizio');return;}
+      if(t2m(end)>LIMITE_ATTIVITA){toast('Non è possibile programmare attività oltre le 21:00');return;}
       const mode=document.getElementById('mRepeat').checked?'weekly':'single';
       const until=mode==='weekly'?(document.getElementById('mUntil').value||null):null;
       const nv=document.getElementById('mNotify').value, notify=nv===''?null:parseInt(nv);
