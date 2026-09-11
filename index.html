@@ -3296,7 +3296,9 @@ import * as repo from './js/repo.js';
             key=el.textContent.replace(/\?$/,'').trim(); const ap=!!impAperte[key];
             el.classList.add('imp-h'); el.classList.toggle('is-open',ap); el.dataset.key=key;
             corpo=document.createElement('div'); corpo.className='imp-body'; corpo.hidden=!ap; s.insertBefore(corpo, el.nextSibling);
-            el.onclick=ev=>{ if(ev.target.closest('.aiuto-btn'))return; const o=corpo.hidden; corpo.hidden=!o; el.classList.toggle('is-open',o); impAperte[key]=o; try{localStorage.setItem('ctm:imp-aperte',JSON.stringify(impAperte));}catch(_){} };
+            /* ogni titolo apre il PROPRIO corpo: variabili fissate qui, non quelle del ciclo */
+            const corpoQui=corpo, keyQui=key;
+            el.onclick=ev=>{ if(ev.target.closest('.aiuto-btn'))return; const o=corpoQui.hidden; corpoQui.hidden=!o; el.classList.toggle('is-open',o); impAperte[keyQui]=o; try{localStorage.setItem('ctm:imp-aperte',JSON.stringify(impAperte));}catch(_){} };
             return;
           }
           if(el.classList.contains('divider')){ corpo=null; el.remove(); return; }
