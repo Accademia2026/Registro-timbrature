@@ -107,12 +107,13 @@ export async function loadAll() {
   };
 
   /* straordinario della settimana: minuti = a credito (nel saldo), pagati_min = pagato a parte */
-  const authorized = {}, pagate = {}, mcOltre = {}, mcCredito = {};
+  const authorized = {}, pagate = {}, mcOltre = {}, mcCredito = {}, mcPagate = {};
   for (const r of autorizz) {
     if (r.minuti != null) authorized[r.settimana] = r.minuti;   /* null = domanda non risposta */
     if (r.pagati_min) pagate[r.settimana] = r.pagati_min;
     if (r.mc_oltre_min != null) mcOltre[r.settimana] = r.mc_oltre_min;
     if (r.mc_credito_min != null) mcCredito[r.settimana] = r.mc_credito_min;
+    if (r.mc_pagate_min != null) mcPagate[r.settimana] = r.mc_pagate_min;
   }
 
   return {
@@ -134,6 +135,7 @@ export async function loadAll() {
     pagate,
     mcOltre,
     mcCredito,
+    mcPagate,
     diary: {},
     /* id come STRINGHE: il prototipo li confronta con === contro i dataset
        del DOM (sempre stringhe). PostgREST accetta stringhe numeriche. */
@@ -266,22 +268,24 @@ export function saveDiritti(entitlements) {
 /** Eccedenza autorizzata della settimana (minuti null/undefined = rimuovi). */
 /** Straordinario della settimana: `minuti` a credito (nel saldo), `pagati`
     a parte. Entrambi assenti/null = nessuna decisione presa (riga rimossa). */
-export function saveAutorizzazione(lunediISO, minuti, pagati, mcOltre, mcCredito) {
+export function saveAutorizzazione(lunediISO, minuti, pagati, mcOltre, mcCredito, mcPagate) {
   debounced('aut:' + lunediISO, async () => {
-    if (minuti == null && pagati == null && mcOltre == null && mcCredito == null) {
+    if (minuti == null && pagati == null && mcOltre == null && mcCredito == null && mcPagate == null) {
       const { error } = await supabase.from('autorizzazioni').delete().eq('settimana', lunediISO);
       if (error) onError('rimozione autorizzazione', { error });
     } else {
       /* minuti null = straordinario ordinario non ancora deciso; mc_oltre_min
          null = Masterclass oltre il tetto non ancora decisa */
       const risposto = minuti != null || pagati != null;
-      const riga = { settimana: lunediISO, minuti: risposto ? (minuti || 0) : null, pagati_min: pagati || 0, mc_oltre_min: mcOltre ?? null, mc_credito_min: mcCredito ?? null };
+      const riga = { settimana: lunediISO, minuti: risposto ? (minuti || 0) : null, pagati_min: pagati || 0, mc_oltre_min: mcOltre ?? null, mc_credito_min: mcCredito ?? null, mc_pagate_min: mcPagate ?? null };
       let { error } = await supabase.from('autorizzazioni').upsert(riga, { onConflict: 'user_id,settimana' });
-      /* colonna non ancora creata (script 11 non eseguito): si salva il resto */
-      if (error && /mc_credito_min/.test(error.message || '')) {
-        const { mc_credito_min, ...senzaMC } = riga;
-        ({ error } = await supabase.from('autorizzazioni').upsert(senzaMC, { onConflict: 'user_id,settimana' }));
-        if (!error) onError('salvataggio autorizzazione', { error: { message: 'Per salvare la scelta sulle Masterclass serve lo script 11' } });
+      /* colonne non ancora create (script 11 o 12 non eseguiti): si salva il resto */
+      if (error && /mc_credito_min|mc_pagate_min/.test(error.message || '')) {
+        const mancante = /mc_pagate_min/.test(error.message) ? '12' : '11';
+        const { mc_credito_min, mc_pagate_min, ...senzaMC } = riga;
+        const parziale = mancante === '12' ? { ...senzaMC, mc_credito_min } : senzaMC;
+        ({ error } = await supabase.from('autorizzazioni').upsert(parziale, { onConflict: 'user_id,settimana' }));
+        if (!error) onError('salvataggio autorizzazione', { error: { message: 'Per salvare la scelta sulle Masterclass serve lo script ' + mancante } });
       }
       if (error) onError('salvataggio autorizzazione', { error });
     }
@@ -454,10 +458,10 @@ export async function replaceAll(DB) {
   }));
   if (dirRows.length) check('import diritti', await supabase.from('diritti_permessi').insert(dirRows));
 
-  const settimane = new Set([...Object.keys(DB.authorized || {}), ...Object.keys(DB.pagate || {}), ...Object.keys(DB.mcOltre || {}), ...Object.keys(DB.mcCredito || {})]);
+  const settimane = new Set([...Object.keys(DB.authorized || {}), ...Object.keys(DB.pagate || {}), ...Object.keys(DB.mcOltre || {}), ...Object.keys(DB.mcCredito || {}), ...Object.keys(DB.mcPagate || {})]);
   const autRows = [...settimane].map((settimana) => {
-    const a = (DB.authorized || {})[settimana], p = (DB.pagate || {})[settimana], m = (DB.mcOltre || {})[settimana], mcc = (DB.mcCredito || {})[settimana];
-    return { settimana, minuti: (a != null || p != null) ? (a || 0) : null, pagati_min: p || 0, mc_oltre_min: m ?? null, mc_credito_min: mcc ?? null };
+    const a = (DB.authorized || {})[settimana], p = (DB.pagate || {})[settimana], m = (DB.mcOltre || {})[settimana], mcc = (DB.mcCredito || {})[settimana], mcp = (DB.mcPagate || {})[settimana];
+    return { settimana, minuti: (a != null || p != null) ? (a || 0) : null, pagati_min: p || 0, mc_oltre_min: m ?? null, mc_credito_min: mcc ?? null, mc_pagate_min: mcp ?? null };
   });
   if (autRows.length) check('import autorizzazioni', await supabase.from('autorizzazioni').insert(autRows));
 
