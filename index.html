@@ -3091,8 +3091,8 @@ import * as repo from './js/repo.js';
       /* le ore dovute sono al massimo le 24 ordinarie: la presenza pianificata in piu'
          (straordinario o recupero) non diventa un obbligo. Le ore di Masterclass
          pianificate oltre il tetto erodono la presenza ordinaria: restano dovute
-         (24h CCNL) e diventano debito da recuperare */
-      return Math.min(s,ORE_PRES_ORD)+Math.max(0,plannedMC(mon)-CAP_STRA);
+         (24h CCNL) e diventano debito da recuperare, ma senza mai superare le 24h */
+      return Math.min(Math.min(s,ORE_PRES_ORD)+Math.max(0,plannedMC(mon)-CAP_STRA), ORE_PRES_ORD);
     }
 
     function studyDefaultFor(date){return +studyScheduleForWeek(monOf(date))[parseISO(date).getDay()]||0;}
@@ -3165,13 +3165,34 @@ import * as repo from './js/repo.js';
       return (s!=null&&e!=null&&e>s)?{s,e}:null;
     }
     function plannedMCDay(date){const f=fasciaMCDay(date);return f?f.e-f.s:0;}
-    /* quanto delle ore timbrate cade dentro la fascia Masterclass pianificata */
+    /* le fasce del giorno secondo l'orario: dicono CHE TIPO di lavoro si fa in
+       quel momento della giornata (lo studio conta come non-Masterclass) */
+    function fasceDay(date){
+      const wd=parseISO(date).getDay(), mon=monOf(date);
+      const sl=(presSlotsForWeek(mon)||{})[wd]||{}, st=(studySlotsForWeek(mon)||{})[wd]||{};
+      const out=[], add=(s,e,tipo)=>{const a=t2m(s),b=t2m(e); if(a!=null&&b!=null&&b>a)out.push({s:a,e:b,tipo});};
+      add(sl.start,sl.end,'pres'); add(st.start,st.end,'pres'); add(sl.mcs,sl.mce,'mc');
+      return out;
+    }
+    /* quanto delle ore TIMBRATE e' Masterclass: l'orario da' il tipo, le
+       timbrature la quantita'. Ogni minuto timbrato prende il tipo della fascia
+       in cui cade e, se cade fuori, quello della fascia piu' vicina: cosi' le
+       ore oltre la fascia prevista restano Masterclass. */
     function mcTimbrataDay(date,e){
-      const f=fasciaMCDay(date); if(!f||!e)return 0;
+      if(!e)return 0;
+      const f=fasceDay(date).sort((a,b)=>a.s-b.s);
+      const mc=f.find(x=>x.tipo==='mc'); if(!mc)return 0;
+      /* la fascia Masterclass si estende fino a meta' strada con le fasce
+         vicine (e senza limite se non ce ne sono): tutto cio' che si timbra
+         in quel tratto della giornata e' Masterclass */
+      const prima=f.filter(x=>x!==mc&&x.e<=mc.s).pop();
+      const dopo=f.find(x=>x!==mc&&x.s>=mc.e);
+      const da=prima?Math.round((prima.e+mc.s)/2):-Infinity;
+      const a=dopo?Math.round((mc.e+dopo.s)/2):Infinity;
       let tot=0;
-      [[t2m(e.m1in),t2m(e.m1out)],[t2m(e.m2in),t2m(e.m2out)]].forEach(([a,b])=>{
-        if(a==null||b==null||b<=a)return;
-        tot+=Math.max(0,Math.min(b,f.e)-Math.max(a,f.s));
+      [[t2m(e.m1in),t2m(e.m1out)],[t2m(e.m2in),t2m(e.m2out)]].forEach(([x,y])=>{
+        if(x==null||y==null||y<=x)return;
+        tot+=Math.max(0,Math.min(y,a)-Math.max(x,da));
       });
       return tot;
     }
@@ -3179,8 +3200,8 @@ import * as repo from './js/repo.js';
       if(!e||!e.act)return 0;
       const beh=ACTBY[e.act]?.beh;
       if(!(beh==='work'||beh==='hour'||beh==='special'))return 0;
-      /* valore scritto a mano nel giorno; se manca, le ore timbrate che cadono
-         dentro la fascia Masterclass dell'orario (mai piu' del netto del giorno) */
+      /* valore scritto a mano nel giorno (arrotondamento o correzione); se manca,
+         le ore timbrate attribuite alla Masterclass dall'orario */
       if(e.mc!=null)return Math.max(0,+e.mc||0);
       return Math.min(mcTimbrataDay(date,e), presenceWork(e).net);
     }
@@ -3237,12 +3258,26 @@ import * as repo from './js/repo.js';
       const delta=(c<0?c:recupero+credito)-comp+mcCredito;
       return {tot,obl,c,mc,mcTot,mcOltreRaw,mcDomanda,mcAut,mcScartati,mcCredito,mcPagate,mcDestDomanda,comp,recupero,resto,credito,pagate,risposto,stra,oltre,totale,delta,balPrev,balDopo:balPrev+delta};
     }
+    /* la serie delle settimane si calcola una volta sola per disegnata: prima
+       ogni weekInfo rifaceva tutta la storia del saldo (lento con molte
+       settimane). azzeraCalcoli() la butta via a ogni modifica o ridisegno. */
+    let _serie=null;
+    function azzeraCalcoli(){ _serie=null; }
+    function serieSettimane(){
+      if(_serie)return _serie;
+      const lista=[]; let bal=DB.initialBalanceMin||0;
+      for(const mon of weeksWithData()){ const wi=weekCalc(mon,bal); bal=wi.balDopo; lista.push({mon,wi}); }
+      _serie={lista, mappa:new Map(lista.map(x=>[x.mon,x.wi])), finale:bal};
+      return _serie;
+    }
     function saldoPrima(mon){
+      const s=serieSettimane();
+      if(mon==null)return s.finale;
       let bal=DB.initialBalanceMin||0;
-      for(const wk of weeksWithData()){ if(mon!=null&&wk>=mon)break; bal+=weekCalc(wk,bal).delta; }
+      for(const x of s.lista){ if(x.mon>=mon)break; bal=x.wi.balDopo; }
       return bal;
     }
-    function weekInfo(mon){return weekCalc(mon,saldoPrima(mon));}
+    function weekInfo(mon){const s=serieSettimane(); return s.mappa.get(mon)||weekCalc(mon,saldoPrima(mon));}
     function authForWeek(mon){return weekInfo(mon).credito;}
     function pagateForWeek(mon){return weekInfo(mon).pagate;}
     function runningBalance(){return saldoPrima(null);}
@@ -3338,6 +3373,7 @@ import * as repo from './js/repo.js';
     }
     new MutationObserver(()=>{ pieghaAiuti(view); fisarmonicaImpostazioni(); }).observe(document.getElementById('view'),{childList:true});
     function setView(v){
+      azzeraCalcoli();
       current=v;
       view.classList.toggle('bare', v==='registro'||v==='riepilogo');
       clearInterval(clockTimer);
@@ -3357,6 +3393,7 @@ import * as repo from './js/repo.js';
       refreshChip();
     }
     function refreshChip(){
+      azzeraCalcoli();
       const b=runningBalance();
       const el=document.getElementById('chipBal');
       el.textContent=fmtHM(b,true); el.className='val mono '+(b<0?'neg':'pos');
@@ -3590,6 +3627,7 @@ import * as repo from './js/repo.js';
       }).join('');
     }
     function renderRiepilogo(){
+      azzeraCalcoli();
       const bal=runningBalance();
       const wks=weeksWithData();
       let over=0,under=0;
@@ -3770,6 +3808,7 @@ import * as repo from './js/repo.js';
       return h;
     }
     function renderRegistro(){
+      azzeraCalcoli();
       if(!weekCursor) weekCursor=iso(mondayOf(new Date()));
       const mon=parseISO(weekCursor), sun=addDays(mon,6);
       const obl=obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
@@ -3835,7 +3874,7 @@ import * as repo from './js/repo.js';
             +'<div class="authrow"><span class="muted">il resto viene pagato a parte</span><span style="flex:1"></span><button class="ios-btn" id="mcDestSave">Conferma</button><button class="ilink" id="mcDestCancel">Annulla</button></div></div>';
         } else if(wi.mcDestDomanda){
           authBar+='<div class="authbox"><span>Masterclass <b>'+fmtHM(wi.mc)+'</b> di straordinario: pagate a parte o a credito nel saldo?</span><span style="flex:1"></span>'
-            +'<button class="ios-btn" id="mcPag">Pagate</button><button class="ios-btn" id="mcCred">A credito</button></div>';
+            +'<button class="ios-btn" id="mcPag">Pagate</button><button class="ios-btn" id="mcCred">A credito'+(arrotondaCredito(wi.mc)<wi.mc?' ('+fmtHM(arrotondaCredito(wi.mc))+')':'')+'</button></div>';
         } else {
           const parti=[]; if(wi.mcPagate>0)parti.push('<b>'+fmtHM(wi.mcPagate)+'</b> pagate a parte'); if(wi.mcCredito>0)parti.push('<b>'+fmtHM(wi.mcCredito)+'</b> a credito nel saldo');
           authBar+='<div class="authbox"><span>✓ Masterclass: '+parti.join(' · ')+'</span><span style="flex:1"></span>'
@@ -3966,7 +4005,8 @@ import * as repo from './js/repo.js';
       /* destinazione delle ore di Masterclass: pagate o a credito */
       const setMCDest=v=>{ mcCreditoMap()[weekCursor]=Math.max(0,Math.min(v,wi.mc)); mcEditWeek=null; saveAuth(weekCursor); refreshChip(); renderRegistro(); };
       const mPag=document.getElementById('mcPag'); if(mPag)mPag.onclick=()=>setMCDest(0);
-      const mCred=document.getElementById('mcCred'); if(mCred)mCred.onclick=()=>setMCDest(wi.mc);
+      /* come per lo straordinario ordinario: a credito si arrotonda alla mezz'ora per difetto */
+      const mCred=document.getElementById('mcCred'); if(mCred)mCred.onclick=()=>setMCDest(arrotondaCredito(wi.mc));
       const mEdit=document.getElementById('mcDestEdit'); if(mEdit)mEdit.onclick=()=>{mcEditWeek=weekCursor;renderRegistro();};
       const mCanc=document.getElementById('mcDestCancel'); if(mCanc)mCanc.onclick=()=>{mcEditWeek=null;renderRegistro();};
       const mSave=document.getElementById('mcDestSave'); if(mSave)mSave.onclick=()=>{
@@ -3990,6 +4030,7 @@ import * as repo from './js/repo.js';
       };
     }
     function recalcWeekLive(el,key,e){
+      azzeraCalcoli();
       const obl=obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
       const sums=view.querySelectorAll('.sum-v');
       const wiL=weekInfo(weekCursor), credL=c<0?c:wiL.credito;
@@ -5718,6 +5759,7 @@ import * as repo from './js/repo.js';
     /* legge dal DOM i campi della tabella unica e li riporta nel modello,
        mantenendo accoppiate le liste presenza/studio */
     function commitOrario(){
+      azzeraCalcoli();
       const P=DB.schedulePeriods, S=DB.studyPeriods;
       view.querySelectorAll('input[data-from][data-k="pres"]').forEach(i=>{
         const pi=+i.dataset.pi; if(!P[pi])return;
@@ -6055,9 +6097,9 @@ import * as repo from './js/repo.js';
     /* ============================================================ infra
        Salvataggi mirati (spec sez. 6.2): ogni modifica scrive solo la riga
        toccata, via repo (che fa il debounce). */
-    function saveDay(k){ repo.saveGiorno(k, DB.entries[k], !!DB.skipDays[k]); }
-    function saveAuth(mon){ repo.saveAutorizzazione(mon, DB.authorized[mon] ?? null, pagateMap()[mon] ?? null, mcOltreMap()[mon] ?? null, mcCreditoMap()[mon] ?? null); }
-    function savePeriods(kind){ repo.savePeriodi(kind==='study'?'studio':'presenza', kind==='study'?DB.studyPeriods:DB.schedulePeriods); }
+    function saveDay(k){ azzeraCalcoli(); repo.saveGiorno(k, DB.entries[k], !!DB.skipDays[k]); }
+    function saveAuth(mon){ azzeraCalcoli(); repo.saveAutorizzazione(mon, DB.authorized[mon] ?? null, pagateMap()[mon] ?? null, mcOltreMap()[mon] ?? null, mcCreditoMap()[mon] ?? null); }
+    function savePeriods(kind){ azzeraCalcoli(); repo.savePeriodi(kind==='study'?'studio':'presenza', kind==='study'?DB.studyPeriods:DB.schedulePeriods); }
     window.addEventListener('pagehide',()=>{try{repo.flush();}catch(e){}});
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){try{repo.flush();}catch(e){}}});
     function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),1800);}
@@ -6175,7 +6217,9 @@ import * as repo from './js/repo.js';
       misuraTopbar(); window.addEventListener('resize',misuraTopbar);
       repo.setOnError((ctx,err)=>{
         console.error('[repo]',ctx,err);
-        try{toast('⚠️ Salvataggio non riuscito: controlla la connessione');}catch(_){}
+        /* se il repo manda un messaggio comprensibile (es. script SQL mancante) si mostra quello */
+        const m=(err&&err.error&&err.error.message)||'';
+        try{toast('⚠️ '+(/script \d+/.test(m)?m:'Salvataggio non riuscito: controlla la connessione'));}catch(_){}
       });
       /* al risveglio della PWA il token puo' essere in rinnovo e la rete
          ancora fredda: si riprova da soli prima di disturbare l'utente */
