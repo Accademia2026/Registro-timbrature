@@ -3088,6 +3088,12 @@ import * as repo from './js/repo.js';
     const MC_PAGATE_ANNO=20*60;     /* prime 20 ore di Masterclass dell'anno: pagate a parte */
     const MC_QUOTA_ANNO=40*60;      /* quota annua di Masterclass da contratto d'istituto */
     function mcNetSlot(sl){const ds=t2m(sl&&sl.mcs),de=t2m(sl&&sl.mce);return (ds!=null&&de!=null&&de>ds)?(de-ds):0;}
+    /* la settimana ha straordinario o Masterclass gia' pianificati in orario? */
+    function straordPianificato(mon){
+      const p=periodFor(DB.schedulePeriods,mon); if(!p||!p.slots)return false;
+      return IDX_.some(wd=>{const sl=p.slots[wd]||{};
+        return mcNetSlot(sl)>0 || (t2m(sl.sts)!=null&&t2m(sl.ste)!=null&&t2m(sl.ste)>t2m(sl.sts));});
+    }
     function plannedMC(mon){
       const p=periodFor(DB.schedulePeriods,mon); if(!p||!p.slots)return 0;
       let s=0; IDX_.forEach(wd=>{s+=mcNetSlot(p.slots[wd]);}); return s;
@@ -4077,12 +4083,25 @@ import * as repo from './js/repo.js';
       if(e.note)pezzi.push('✎');
       return pezzi.join(' · ');
     }
+    /* ore previste dall'orario per quel giorno, studio escluso: presenza
+       ordinaria + straordinario pianificato + Masterclass */
+    function dayPrevisto(date){
+      return fasceGiorno(date).reduce((s,f)=>s+(f.tipo==='studio'?0:f.net),0);
+    }
+    /* totale della giornata: ordinario + straordinario + Masterclass, cioe' le
+       ore davvero prestate. Lo studio no: e' un contatore a parte. */
+    function dayPrestate(key,e){
+      const beh=ACTBY[e&&e.act]?.beh;
+      if(!(beh==='work'||beh==='hour'||beh==='special'))return dayMinutes(key,e);
+      const wI=dayWorkInfo(key,e);
+      return dayMinutes(key,e)+wI.straord+wI.mc;
+    }
     function rigaTot(key,e){
       if(!e.act)return '<span class="muted">—</span>';
       const expected=expectedFor(key);
       const beh=ACTBY[e.act]?.beh;
       const showSu=(beh==='work'||beh==='hour'||beh==='special')&&expected>0;
-      return fmtHM(dayMinutes(key,e))+(showSu?'<small>su '+fmtHM(expected)+'</small>':'');
+      return fmtHM(dayPrestate(key,e))+(showSu?'<small>su '+fmtHM(dayPrevisto(key)||expected)+'</small>':'');
     }
     function editorGiorno(key,e){
       const beh=ACTBY[e.act]?.beh, expected=expectedFor(key);
@@ -4180,9 +4199,11 @@ import * as repo from './js/repo.js';
             +'<span class="dtimes muted">Rimosso</span>'
             +'<button class="ilink dsm" data-restore="'+key+'">Ripristina</button></div>';
         } else if(naturalRest && !hasEntry(e)){
+          /* niente pulsante dove lo straordinario e la Masterclass sono gia'
+             pianificati in orario: si aggiungono da li', non dal giorno */
           days+='<div class="drow drow--off"><span class="kl" style="background:var(--line)"></span>'+nomeG
             +'<span class="dtimes muted" style="font-style:italic">Riposo</span>'
-            +'<button class="ilink dsm" data-unlock="'+key+'">+ straord.</button></div>';
+            +(straordPianificato(weekCursor)?'':'<button class="ilink dsm" data-unlock="'+key+'">+ timbra</button>')+'</div>';
         } else {
           const aperto=openDay===key;
           const accent=e.act?actAccent(e.act):'var(--line-strong)';
@@ -4257,7 +4278,9 @@ import * as repo from './js/repo.js';
       });
       view.querySelectorAll('[data-unlock]').forEach(b=>b.onclick=()=>{
         const key=b.dataset.unlock;
-        DB.entries[key]={act:'straordinario'};
+        /* si apre come presenza: il tipo delle ore lo decide l'orario */
+        DB.entries[key]={act:'presenza'};
+        openDay=key;
         saveDay(key); refreshChip(); renderRegistro();
       });
       view.querySelectorAll('[data-mcauto]').forEach(b=>b.onclick=()=>{
