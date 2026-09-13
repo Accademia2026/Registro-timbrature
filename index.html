@@ -2934,9 +2934,11 @@ import * as repo from './js/repo.js';
     /* ============================================================ Activity catalog */
     const ACT = [
       {id:'presenza',     label:'Presenza',                  beh:'work'},
-      {id:'straordinario',label:'Straordinario',             beh:'work'},
+      /* 'straordinario' e 'pausa' non si scelgono piu': il tipo di ora lo
+         decide l'Orario di servizio. Restano per le giornate gia' registrate. */
+      {id:'straordinario',label:'Straordinario',             beh:'work', nascosta:true},
       {id:'compensazione',label:'Compensazione',             beh:'work', comp:true}, /* ph = ore di riposo compensativo prese dal saldo */
-      {id:'pausa',        label:'Pausa 30 min',              beh:'work'},
+      {id:'pausa',        label:'Pausa 30 min',              beh:'work', nascosta:true},
       {id:'ferie',        label:'Ferie',                     beh:'day',  ent:'ferie',  unit:'GG'},
       {id:'paternita',    label:'Paternità',                 beh:'day',  ent:'paternita', unit:'GG'},
       {id:'fest_soppressa',label:'Festività soppressa',      beh:'day',  ent:'fest_soppressa', unit:'GG'},
@@ -3591,7 +3593,7 @@ import * as repo from './js/repo.js';
        (credito autorizzato, debito, riposo compensativo), con saldo progressivo */
     let movFiltro='tutti';
     /* sezioni del Riepilogo apribili: stato ricordato sul dispositivo */
-    let riepAperti={andamento:false,mov:false};
+    let riepAperti={andamento:false,mov:false,sist:false};
     try{ const s=JSON.parse(localStorage.getItem('ctm:riep-aperti')||'null'); if(s&&typeof s==='object')riepAperti={...riepAperti,...s}; }catch(_){}
     function toggleSezione(sez){
       riepAperti[sez]=!riepAperti[sez];
@@ -3829,6 +3831,48 @@ import * as repo from './js/repo.js';
           +tag+'</div>';
       }).join('');
     }
+    /* ==================================================================
+       Controllo dei dati: tutto quello che non torna, in un posto solo.
+       Serve dopo il cambio di regole del 13/09/2026, per ripulire le
+       giornate registrate con il modello vecchio. */
+    function problemiDati(){
+      const fuori=[], mancanti=[], mcMano=[], tipiVecchi=[], autVecchie=[];
+      Object.keys(DB.entries).sort().forEach(k=>{
+        const e=DB.entries[k]; if(!hasEntry(e)||isSkipped(k))return;
+        if(e.mc!=null)mcMano.push({k,min:e.mc});
+        if(ACTBY[e.act]&&ACTBY[e.act].nascosta)tipiVecchi.push({k,act:e.act});
+        const wI=dayWorkInfo(k,e);
+        if(wI.fuoriNonAut>0)fuori.push({k,min:wI.fuoriNonAut});
+        if(wI.mancanti>0)mancanti.push({k,min:wI.mancanti});
+      });
+      Object.keys(DB.authorized||{}).forEach(m=>{ if(DB.authorized[m]&&DB.authorized[m].min>0)autVecchie.push(m); });
+      return {vuote:settimaneVuote(), fuori, mancanti, mcMano, tipiVecchi, autVecchie};
+    }
+    function daSistemareHTML(){
+      const p=problemiDati();
+      const n=p.vuote.length+p.fuori.length+p.mancanti.length+p.mcMano.length+p.tipiVecchi.length;
+      if(!n)return '<div><div class="group-header">Controllo dati</div><div class="group">'
+        +'<div class="row"><span class="row__label">✅ Tutto in ordine: nessuna giornata da sistemare.</span></div></div></div>';
+      const gg=(l,sett)=>l.slice(0,10).map(x=>'<button class="wtag wtag--link" data-'+(sett?'openweek':'openday')+'="'+x.k+'">'+esc(sett?rangeSettimana(x.k):dataItBreve(x.k))+(x.min?' · '+fmtHM(x.min):'')+'</button>').join(' ')
+        +(l.length>10?' <small class="muted">e altri '+(l.length-10)+'</small>':'');
+      const riga=(id,lab,lista,sett)=>lista.length?'<div class="row" style="flex-wrap:wrap"><span class="row__label">'+lab+'</span>'
+        +'<span class="row__value neg">'+lista.length+'</span>'
+        +'<div class="wtags" style="flex-basis:100%;margin-top:6px">'+gg(lista,sett)+'</div></div>':'';
+      const aperto=riepAperti.sist;
+      return '<div><div class="group-header">Controllo dati</div><div class="group">'
+        +'<div class="row row--tap gh-tap'+(aperto?' row--open':'')+'" data-sez="sist"><span class="row__label">Giornate e settimane da sistemare</span><span class="row__value neg">'+n+'</span></div>'
+        +'<div class="gh-body"'+(aperto?'':' hidden')+'>'
+        +riga('vuote','Settimane senza nessuna timbratura <small class="muted">fuori dal saldo</small>',p.vuote.map(m=>({k:m})),true)
+        +riga('fuori','Ore timbrate fuori dalle fasce previste <small class="muted">da autorizzare o da correggere</small>',p.fuori)
+        +riga('mancanti','Giornate sotto la fascia prevista <small class="muted">fanno debito</small>',p.mancanti)
+        +riga('mcMano','Masterclass forzata a mano <small class="muted">dovrebbe venire dall’orario</small>',p.mcMano)
+        +riga('tipiVecchi','Giornate con un tipo non più in uso <small class="muted">Straordinario, Pausa</small>',p.tipiVecchi)
+        +(p.mcMano.length?'<div class="linkrow" style="margin:6px 16px"><button class="ilink" id="sistMc">Usa l’orario su tutte le '+p.mcMano.length+'</button></div>':'')
+        +(p.tipiVecchi.length?'<div class="linkrow" style="margin:6px 16px"><button class="ilink" id="sistTipi">Converti tutte in Presenza</button></div>':'')
+        +'<p class="group-note" style="margin:8px 16px 10px">Il tipo di ora (ordinario, straordinario, Masterclass) lo decide l’Orario di servizio: nelle giornate si timbra e basta. Le ore fuori dalle fasce non contano finché non le autorizzi nel giorno.</p>'
+        +'</div></div></div>';
+    }
+    const dataItBreve=k=>{const d=parseISO(k);return d.getDate()+'/'+pad(d.getMonth()+1);};
     function renderRiepilogo(){
       azzeraCalcoli();
       const bal=runningBalance();
@@ -3884,6 +3928,7 @@ import * as repo from './js/repo.js';
             +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza ordinaria e straordinario a credito; il riposo compensativo lo scala. Masterclass, straordinario pagato e studio restano a parte. Le settimane senza nessuna timbratura non entrano nel saldo: vanno compilate o rimosse.</p>'
           +'</div></div></div>'
           +'<div id="saldoBox">'+saldoHTML()+'</div>'
+          +daSistemareHTML()
           +'<div><div class="group-header">'+(ultima?'Ultima settimana':'Settimane')+'</div><div class="group">'+settimane+'</div>'
             +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Le etichette raccontano cosa \u00e8 successo.</p></div>'
         +'</div>'
@@ -3925,6 +3970,20 @@ import * as repo from './js/repo.js';
       };
       bindSaldo();
       view.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
+      view.querySelectorAll('[data-openday]').forEach(b=>b.onclick=()=>{const k=b.dataset.openday;weekCursor=monOf(k);openDay=k;setView('registro');});
+      /* riparazioni in blocco delle giornate registrate con il modello vecchio */
+      const sistMc=document.getElementById('sistMc'); if(sistMc)sistMc.onclick=()=>{
+        const l=problemiDati().mcMano;
+        if(!confirm('Togliere la Masterclass scritta a mano su '+l.length+' giornate? Le ore di Masterclass verranno prese dall\'Orario di servizio.'))return;
+        l.forEach(x=>{ delete DB.entries[x.k].mc; saveDay(x.k); });
+        refreshChip(); renderRiepilogo(); toast(l.length+' giornate riportate all\'orario');
+      };
+      const sistTipi=document.getElementById('sistTipi'); if(sistTipi)sistTipi.onclick=()=>{
+        const l=problemiDati().tipiVecchi;
+        if(!confirm('Convertire '+l.length+' giornate in Presenza? Gli orari timbrati restano come sono: cambia solo l\'etichetta, il tipo di ora lo decide l\'Orario di servizio.'))return;
+        l.forEach(x=>{ DB.entries[x.k].act='presenza'; saveDay(x.k); });
+        refreshChip(); renderRiepilogo(); toast(l.length+' giornate convertite in Presenza');
+      };
       const btn=document.getElementById('btnTimbra');
       if(btn) btn.onclick=doTimbra;
       view.querySelectorAll('[data-oggi-ev]').forEach(r=>r.onclick=()=>{const ev=DB.events.find(x=>x.id===r.dataset.oggiEv); if(ev)schedaEvento(ev);});
@@ -3972,7 +4031,11 @@ import * as repo from './js/repo.js';
       const isComp=!!ACTBY[e.act]?.comp, showPh=beh==='hour'||isComp;
       const sp1=(t2m(e.m1in)!=null&&t2m(e.m1out)!=null)?Math.max(0,t2m(e.m1out)-t2m(e.m1in)):null;
       const sp2=(t2m(e.m2in)!=null&&t2m(e.m2out)!=null)?Math.max(0,t2m(e.m2out)-t2m(e.m2in)):null;
-      const opts='<option value="">— seleziona —</option>'+ACT.map(a=>'<option value="'+a.id+'" '+(e.act===a.id?'selected':'')+'>'+a.label+'</option>').join('');
+      /* non si sceglie piu' il tipo di ora: ordinario, straordinario e
+         Masterclass li dice l'Orario di servizio, qui si timbra e basta.
+         Le voci nascoste restano per le giornate registrate in passato. */
+      const opts='<option value="">— seleziona —</option>'+ACT.filter(a=>!a.nascosta||e.act===a.id)
+        .map(a=>'<option value="'+a.id+'" '+(e.act===a.id?'selected':'')+'>'+a.label+'</option>').join('');
       const tbtn=(f)=>'<button class="input input--time tinput '+(e[f]?'':'is-empty')+'" data-k="'+key+'" data-f="'+f+'" data-val="'+(e[f]||'')+'">'+(e[f]||'––:––')+'</button>';
       let x='<div class="dopen-r1"><select class="act-sel" data-k="'+key+'" data-f="act">'+opts+'</select>'
         +(studyDefaultFor(key)>0?'<span class="badge-st">Studio '+fmtHM(studyDefaultFor(key))+'</span>':'')
@@ -3984,11 +4047,11 @@ import * as repo from './js/repo.js';
       if(showPh){
         x+='<div class="phfield"><span class="muted">'+(isComp?'Ore compensate <small>(dal saldo)</small>':'Ore permesso')+'</span><input class="note" style="width:90px" type="number" min="0" step="0.25" data-k="'+key+'" data-f="phh" value="'+(e.ph!=null?(e.ph/60):'')+'" placeholder="es. 2"></div>';
       }
-      if(showTimes){
-        /* ore della giornata dedicate a Masterclass: pagate a parte, tolte dalla presenza ordinaria */
-        const mcPian=plannedMCDay(key);
-        x+='<div class="phfield"><span class="muted"><i class="kl2 m"></i>di cui Masterclass</span><input class="note" style="width:90px" type="number" min="0" step="0.25" data-k="'+key+'" data-f="mch" value="'+(e.mc!=null?(e.mc/60):'')+'" placeholder="'+(mcPian?(mcPian/60)+' (orario)':'ore')+'">'
-          +(mcPian&&e.mc==null?'<small class="muted">dall’orario</small>':'')+'</div>';
+      /* la Masterclass non si dichiara piu' a mano: viene dalla fascia viola
+         dell'Orario di servizio. Il campo resta solo dove era stato usato. */
+      if(showTimes&&e.mc!=null){
+        x+='<div class="phfield"><span class="muted"><i class="kl2 m"></i>Masterclass forzata a mano</span><input class="note" style="width:90px" type="number" min="0" step="0.25" data-k="'+key+'" data-f="mch" value="'+(e.mc/60)+'" placeholder="ore">'
+          +'<button class="linkbtn" data-mcauto="'+key+'">usa l’orario</button></div>';
       }
       x+='<input class="note" type="text" data-k="'+key+'" data-f="note" value="'+((e.note||'').replace(/"/g,'&quot;'))+'" placeholder="Note (facoltative)">';
       const wI=dayWorkInfo(key,e);
@@ -4135,6 +4198,10 @@ import * as repo from './js/repo.js';
         const key=b.dataset.unlock;
         DB.entries[key]={act:'straordinario'};
         saveDay(key); refreshChip(); renderRegistro();
+      });
+      view.querySelectorAll('[data-mcauto]').forEach(b=>b.onclick=()=>{
+        const k=b.dataset.mcauto, en=DB.entries[k]; if(!en)return;
+        delete en.mc; saveDay(k); refreshChip(); renderRegistro();
       });
       view.querySelectorAll('[data-autall]').forEach(b=>b.onclick=()=>{
         const k=b.dataset.autall, en=DB.entries[k]||(DB.entries[k]={});
@@ -5835,10 +5902,20 @@ import * as repo from './js/repo.js';
             return r;
           }).join('');
           h+='<div class="period-body">'
+            +(pi===0
+              ? '<p class="hint2" style="margin:2px 0 10px">Questo è l’orario di servizio dell’anno: vale da inizio anno e in tutte le settimane in cui non c’è una variazione.</p>'
+              : '<div class="field" style="margin:2px 0 10px"><label>Tipo di variazione</label>'
+                +'<select class="act-sel recup-sel" data-vartipo="'+pi+'">'
+                  +'<option value="cont"'+(p.to?'':' selected')+'>Continuativa · cambia l’orario da qui in poi</option>'
+                  +'<option value="temp"'+(p.to?' selected':'')+'>Temporanea · solo per le settimane indicate</option>'
+                +'</select>'
+                +'<p class="hint2">'+(p.to
+                  ? 'Finite le settimane indicate torna in vigore l’orario precedente.'
+                  : 'Sostituisce l’orario di servizio fino a un’altra variazione continuativa.')+'</p></div>')
             +'<div class="field" style="margin:2px 0 10px"><label>'+(pi===0?'Valido dall’inizio (settimana del)':'Valido dalla settimana del')+'</label>'
               +'<input type="date" data-k="pres" data-pi="'+pi+'" data-from value="'+p.from+'"></div>'
-            +'<div class="field" style="margin:2px 0 10px"><label>Fino alla settimana del <span class="hint2">(facoltativo: vuoto = fino al prossimo cambio)</span></label>'
-              +'<input type="date" data-k="pres" data-pi="'+pi+'" data-to value="'+(p.to||'')+'"></div>'
+            +(pi>0&&p.to?'<div class="field" style="margin:2px 0 10px"><label>Fino alla settimana del <span class="hint2">(per una sola settimana, ripeti la stessa data)</span></label>'
+              +'<input type="date" data-k="pres" data-pi="'+pi+'" data-to value="'+(p.to||'')+'"></div>':'')
             +'<div class="orario-list">'+righe+'</div>'
             +'<div class="orario-foot" data-foot="'+pi+'">'+piedeHTML(pi)+'</div>'
             +'<div class="setrow" style="margin:12px 0 0;gap:8px">'
@@ -5983,6 +6060,8 @@ import * as repo from './js/repo.js';
         view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd][kind==='straord'?'stp':'pausa']=Math.max(0,parseInt(i.value,10)||0);});
         list.forEach(p=>{p.slots=p.slots||{};p.schedule=p.schedule||{};IDX_.forEach(wd=>{p.schedule[wd]=nettoSlot(p.slots[wd]||{});});p.schedule[0]=0;p.slots[0]={};});
       });
+      /* l'orario di inizio anno non scade mai: e' la base a cui si torna */
+      if(P[0]){P[0].to=''; if(S[0])S[0].to='';}
       /* debito che lo straordinario pianificato di quel giorno va a recuperare */
       view.querySelectorAll('select[data-rec][data-k="straord"]').forEach(s=>{
         const pi=+s.dataset.pi; if(!P[pi])return; const wd=+s.dataset.rec;
@@ -6122,6 +6201,14 @@ import * as repo from './js/repo.js';
       /* la scelta del debito da recuperare entra subito nel modello: resta da
          confermare con "Salva orario" come gli orari */
       view.querySelectorAll('select[data-rec]').forEach(s=>s.addEventListener('change',()=>commitOrario()));
+      /* temporanea o continuativa: la temporanea ha una fine, la continuativa no */
+      view.querySelectorAll('select[data-vartipo]').forEach(s=>s.addEventListener('change',()=>{
+        commitOrario();
+        const pi=+s.dataset.vartipo, p=DB.schedulePeriods[pi]; if(!p)return;
+        const t=s.value==='temp'?(p.to||p.from||thisWeekMon()):'';
+        p.to=t; if(DB.studyPeriods[pi])DB.studyPeriods[pi].to=t;
+        renderImpostazioni();
+      }));
       view.querySelectorAll('[data-salvaorario]').forEach(b=>b.onclick=()=>{
         commitOrario();
         const errori=erroriOrario();

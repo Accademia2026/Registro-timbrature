@@ -26,6 +26,20 @@ In Impostazioni → Orario di lavoro si configurano, giorno per giorno, le fasce
 
 Una fascia configurata vale come attività già autorizzata.
 
+**Nella giornata non si dichiara nulla: si timbra e basta.** Il tipo di ora
+(ordinario, straordinario, Masterclass) lo decide l'Orario di servizio in vigore
+quella settimana. Restano da scegliere solo le assenze (ferie, malattia,
+permessi) e il riposo compensativo.
+
+### Variazioni di orario
+
+- **Continuativa**: cambia l'orario di servizio da quella settimana in poi,
+  fino a un'altra variazione continuativa. Non ha una data di fine.
+- **Temporanea**: vale solo per le settimane indicate (anche una sola);
+  finite quelle, torna in vigore l'orario precedente.
+
+L'orario di inizio anno è la base: non scade mai ed è quello a cui si torna.
+
 Le 36 ore settimanali sono **24h di presenza + 12h di studio**, e si controllano
 separatamente: la presenza non può superare le 24h. Le ore in più si pianificano
 nella fascia Straordinario (fino a 9h) o Masterclass, che stanno fuori dalle 36h
