@@ -3160,7 +3160,9 @@ import * as repo from './js/repo.js';
       return {study, pw, base, gc, straord, mc, comp, aut,
         /* le ore mancanti sono coperte da permessi a ore e riposo compensativo */
         mancanti:(beh==='work'||beh==='hour')?Math.max(0,gc.mancanti-comp-(beh==='hour'?(+e.ph||0):0)):0,
-        fuori:gc.fuori, fuoriNonAut:Math.max(0,gc.fuori-aut),
+        /* deciso = il giorno ha un valore di autorizzazione, anche 0: le ore
+           fuori fascia non sono piu' «da autorizzare», semplicemente non contano */
+        fuori:gc.fuori, deciso:(e&&e.straordAut!=null), fuoriNonAut:(e&&e.straordAut!=null)?0:Math.max(0,gc.fuori-aut),
         /* la pausa tolta e' quella delle fasce: il riposo compensativo non entra nel conto */
         pausa:gc.pausa, capped, cappedBase:Math.min(base,DAILY_CAP), beh, deducted:gc.pausa+capped};
     }
@@ -3852,6 +3854,7 @@ import * as repo from './js/repo.js';
        Controllo dei dati: tutto quello che non torna, in un posto solo.
        Serve dopo il cambio di regole del 13/09/2026, per ripulire le
        giornate registrate con il modello vecchio. */
+    const POCHI_MIN=30;   /* «pochi minuti in più»: sotto la mezz'ora */
     function problemiDati(){
       const fuori=[], mancanti=[], mcMano=[], tipiVecchi=[], autVecchie=[];
       Object.keys(DB.entries).sort().forEach(k=>{
@@ -3863,7 +3866,7 @@ import * as repo from './js/repo.js';
         if(wI.mancanti>0)mancanti.push({k,min:wI.mancanti});
       });
       Object.keys(DB.authorized||{}).forEach(m=>{ if(DB.authorized[m]&&DB.authorized[m].min>0)autVecchie.push(m); });
-      return {vuote:settimaneVuote(), fuori, mancanti, mcMano, tipiVecchi, autVecchie};
+      return {vuote:settimaneVuote(), fuori, fuoriPochi:fuori.filter(x=>x.min<POCHI_MIN), mancanti, mcMano, tipiVecchi, autVecchie};
     }
     function daSistemareHTML(){
       const p=problemiDati();
@@ -3884,6 +3887,9 @@ import * as repo from './js/repo.js';
         +riga('mancanti','Giornate sotto la fascia prevista <small class="muted">fanno debito</small>',p.mancanti)
         +riga('mcMano','Masterclass forzata a mano <small class="muted">dovrebbe venire dall’orario</small>',p.mcMano)
         +riga('tipiVecchi','Giornate con un tipo non più in uso <small class="muted">Straordinario, Pausa</small>',p.tipiVecchi)
+        +(p.fuori.length?'<div class="linkrow" style="margin:6px 16px">'
+            +(p.fuoriPochi.length?'<button class="ilink" id="sistFuoriPochi">Non autorizzate le '+p.fuoriPochi.length+' sotto i 30 minuti</button>':'')
+            +'<button class="ilink" id="sistFuoriTutte">Non autorizzate tutte le '+p.fuori.length+'</button></div>':'')
         +(p.mcMano.length?'<div class="linkrow" style="margin:6px 16px"><button class="ilink" id="sistMc">Usa l’orario su tutte le '+p.mcMano.length+'</button></div>':'')
         +(p.tipiVecchi.length?'<div class="linkrow" style="margin:6px 16px"><button class="ilink" id="sistTipi">Converti tutte in Presenza</button></div>':'')
         +'<p class="group-note" style="margin:8px 16px 10px">Il tipo di ora (ordinario, straordinario, Masterclass) lo decide l’Orario di servizio: nelle giornate si timbra e basta. Le ore fuori dalle fasce non contano finché non le autorizzi nel giorno.</p>'
@@ -3989,6 +3995,22 @@ import * as repo from './js/repo.js';
       view.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
       view.querySelectorAll('[data-openday]').forEach(b=>b.onclick=()=>{const k=b.dataset.openday;weekCursor=monOf(k);openDay=k;setView('registro');});
       /* riparazioni in blocco delle giornate registrate con il modello vecchio */
+      /* «non autorizzate»: le ore fuori fascia restano registrate ma non contano,
+         e la giornata smette di comparire fra quelle da decidere */
+      const nonAut=(lista,testo)=>{
+        if(!lista.length)return;
+        if(!confirm(testo))return;
+        lista.forEach(x=>{ const en=DB.entries[x.k]; if(!en)return; en.straordAut=0; saveDay(x.k); });
+        refreshChip(); renderRiepilogo(); toast(lista.length+' giornate segnate come non autorizzate');
+      };
+      const sfp=document.getElementById('sistFuoriPochi'); if(sfp)sfp.onclick=()=>{
+        const l=problemiDati().fuoriPochi;
+        nonAut(l,'Segnare come NON autorizzate le ore fuori orario di '+l.length+' giornate, tutte sotto i 30 minuti? Le timbrature restano come sono: quelle ore semplicemente non contano.');
+      };
+      const sft=document.getElementById('sistFuoriTutte'); if(sft)sft.onclick=()=>{
+        const l=problemiDati().fuori, tot=l.reduce((s,x)=>s+x.min,0);
+        nonAut(l,'Segnare come NON autorizzate le ore fuori orario di tutte le '+l.length+' giornate ('+fmtHM(tot)+' in tutto)? Le timbrature restano come sono: quelle ore non contano e non andranno a credito.');
+      };
       const sistMc=document.getElementById('sistMc'); if(sistMc)sistMc.onclick=()=>{
         const l=problemiDati().mcMano;
         if(!confirm('Togliere la Masterclass scritta a mano su '+l.length+' giornate? Le ore di Masterclass verranno prese dall\'Orario di servizio.'))return;
@@ -4076,7 +4098,9 @@ import * as repo from './js/repo.js';
       if(wI.fuori>0||(e&&e.straordAut)){
         x+='<div class="phfield fuori-row"><span class="muted">Fuori orario <b>'+fmtHM(wI.fuori)+'</b> · autorizzati</span>'
           +'<input class="note" style="width:76px" type="number" min="0" max="'+wI.fuori+'" step="5" data-k="'+key+'" data-f="sah" value="'+(e&&e.straordAut!=null?e.straordAut:'')+'" placeholder="min">'
-          +'<span class="muted">min</span><button class="linkbtn" data-autall="'+key+'">tutti</button></div>';
+          +'<span class="muted">min</span><button class="linkbtn" data-autall="'+key+'">tutti</button>'
+          +'<button class="linkbtn" data-autnone="'+key+'">nessuno</button></div>'
+        +(wI.deciso&&wI.fuori>0&&!(e&&e.straordAut)?'<div class="day__note">'+fmtHM(wI.fuori)+' fuori orario non autorizzate: restano registrate ma non contano.</div>':'');
       }
       if(wI.mancanti>0)x+='<div class="day__note">Mancano '+fmtHM(wI.mancanti)+' rispetto alla fascia prevista</div>';
       if(wI.deducted>0){const parts=[];if(wI.pausa>0)parts.push('pausa '+fmtHM(wI.pausa));if(wI.capped>0)parts.push('tetto 9h');x+='<div class="day__note">−'+fmtHM(wI.deducted)+' · '+parts.join(' + ')+'</div>';}
@@ -4223,6 +4247,11 @@ import * as repo from './js/repo.js';
       view.querySelectorAll('[data-autall]').forEach(b=>b.onclick=()=>{
         const k=b.dataset.autall, en=DB.entries[k]||(DB.entries[k]={});
         en.straordAut=dayWorkInfo(k,en).fuori+(en.straordAut||0);
+        saveDay(k); refreshChip(); renderRegistro();
+      });
+      view.querySelectorAll('[data-autnone]').forEach(b=>b.onclick=()=>{
+        const k=b.dataset.autnone, en=DB.entries[k]||(DB.entries[k]={});
+        en.straordAut=0;   /* deciso: nessuna ora autorizzata, niente piu' avviso */
         saveDay(k); refreshChip(); renderRegistro();
       });
       view.querySelectorAll('[data-removeday]').forEach(b=>b.onclick=()=>{
@@ -5283,7 +5312,7 @@ import * as repo from './js/repo.js';
         titolo('Straordinario');
         const body=infoW.filter(([,wi])=>wi.straord>0||wi.credito>0||wi.fuori>0).map(([m,wi])=>[settLab(m), wi.straord?fm(wi.straord):'—', wi.mcCredito?fm(wi.mcCredito):'—', wi.c>0?fm(wi.c):'—', wi.fuori?fm(wi.fuori):'—']);
         if(body.length) testo('Totale a credito nel periodo: '+fm(somma(w=>w.credito))+'. Lo straordinario ordinario non e mai pagato: va a credito e si recupera con il riposo compensativo.');
-        tabella(['Settimana','Straord. ordinario','Masterclass a credito','Ore ordinarie in piu','Fuori orario non aut.'], body, {columnStyles:{1:{halign:'center'},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'}}});
+        tabella(['Settimana','Straord. ordinario','Masterclass a credito','Ore ordinarie in piu','Fuori orario da autorizzare'], body, {columnStyles:{1:{halign:'center'},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'}}});
         /* dettaglio giorno per giorno con il debito che ogni quota recupera */
         const A=allocazioniSaldo();
         const lotG=A.lotti.filter(l=>l.tipo==='credito'&&l.giorno&&l.giorno>=da&&l.giorno<=a&&l.min>0);
