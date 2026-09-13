@@ -3185,6 +3185,24 @@ import * as repo from './js/repo.js';
       Object.keys(DB.entries).forEach(d=>{ if(hasEntry(DB.entries[d])) set.add(iso(mondayOf(parseISO(d)))); });
       return [...set].sort();
     }
+    /* settimana senza nulla dentro: nessuna voce e nessun giorno rimosso.
+       Non entra nel saldo (l'app non puo' sapere se sono ore dimenticate o una
+       settimana non lavorativa), ma va segnalata finche' non si compila o non
+       si rimuove: cosi' il conto della settimana e il saldo dicono la stessa cosa. */
+    function settimanaVuota(mon){
+      const m=parseISO(mon);
+      for(let i=0;i<7;i++){const k=iso(addDays(m,i)); if(isSkipped(k)||hasEntry(DB.entries[k]))return false;}
+      return true;
+    }
+    /* le settimane vuote gia' passate, dall'inizio dell'anno a quella scorsa */
+    function settimaneVuote(){
+      const wks=weeksWithData(); if(!wks.length)return [];
+      const inizio=DB.startDate?monOf(DB.startDate):wks[0];
+      const fine=thisWeekMon(); let m=inizio<wks[0]?inizio:wks[0];
+      const out=[]; let guardia=0;
+      while(m<fine && guardia++<600){ if(settimanaVuota(m))out.push(m); m=iso(addDays(parseISO(m),7)); }
+      return out;
+    }
     function weekTotal(mon){
       let tot=0; for(let i=0;i<7;i++){const d=iso(addDays(parseISO(mon),i)); if(isSkipped(d))continue; tot+=dayMinutes(d,DB.entries[d]);}
       return tot;
@@ -3717,7 +3735,8 @@ import * as repo from './js/repo.js';
       else if(key==='pagato'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.mcPagate>0)righe.push(riga(mon, fmtHM(wi.mcPagate)+' <small class="muted">Masterclass</small>'));}); }
       else if(key==='comp'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.comp>0)righe.push(riga(mon, fmtHM(wi.comp)));}); }
       else if(key==='fuori'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.fuori>0)righe.push(riga(mon, fmtHM(wi.fuori)+' <small class="muted">da autorizzare</small>','neg'));}); }
-      else if(key==='mc'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.mc>0)righe.push(riga(mon, fmtHM(wi.mc)+' <small class="muted">'+[wi.mcPagate?fmtHM(wi.mcPagate)+' pagate':'',wi.mcCredito?fmtHM(wi.mcCredito)+' a credito':'',wi.mcOltre40?fmtHM(wi.mcOltre40)+' oltre quota':''].filter(Boolean).join(' · ')+'</small>'));}); }      else if(key==='ferie') elenco('ferie','gg');
+      else if(key==='mc'){ wks.forEach(mon=>{const wi=weekInfo(mon); if(wi.mc>0)righe.push(riga(mon, fmtHM(wi.mc)+' <small class="muted">'+[wi.mcPagate?fmtHM(wi.mcPagate)+' pagate':'',wi.mcCredito?fmtHM(wi.mcCredito)+' a credito':'',wi.mcOltre40?fmtHM(wi.mcOltre40)+' oltre quota':''].filter(Boolean).join(' · ')+'</small>'));}); }      else if(key==='vuote'){ settimaneVuote().forEach(mon=>righe.push(riga(mon,'nessuna timbratura <small class="muted">fuori dal saldo</small>','neg'))); }
+      else if(key==='ferie') elenco('ferie','gg');
       else if(key==='malattia') elenco('malattia','gg');
       else if(key==='omessa') elenco('omessa','gg');
       return '<div class="dett-out">'+(righe.length?righe.join(''):'<div class="row dett-row"><span class="row__label muted">Nessuna settimana</span></div>')+'</div>';
@@ -3742,6 +3761,7 @@ import * as repo from './js/repo.js';
       azzeraCalcoli();
       const bal=runningBalance();
       const wks=weeksWithData();
+      const vuote=settimaneVuote();
       let over=0,under=0;
       wks.forEach(m=>{const wi=weekInfo(m); if(wi.c<0)under++; else if(wi.credito>0)over++;});
       const fAlloc=ferieAlloc();
@@ -3781,6 +3801,7 @@ import * as repo from './js/repo.js';
             +'<div class="row row--tap gh-tap'+(riepAperti.andamento?' row--open':'')+'" data-sez="andamento"><span class="row__label">Saldo ore complessivo</span><span class="row__value"><b class="'+(bal<0?'neg':'pos')+'">'+fmtHM(bal,true)+'</b> <small class="muted">· '+wks.length+' settimane</small></span></div>'
           +'<div class="gh-body"'+(riepAperti.andamento?'':' hidden')+'>'
             +'<div class="row row--tap" data-dett="settimane"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+(wks.length?' <small class="muted">\u00b7 '+over+' con straordinario \u00b7 '+under+' sotto</small>':'')+'</span></div>'
+            +(vuote.length?'<div class="row row--tap" data-dett="vuote"><span class="row__label">Settimane senza timbrature</span><span class="row__value neg">'+vuote.length+' <small class="muted">fuori dal saldo</small></span></div>':'')
             +'<div class="row row--tap" data-dett="credito"><span class="row__label">Straordinario a credito</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).credito,0))+'</span></div>'
             +'<div class="row row--tap" data-dett="mc"><span class="row__label">Masterclass</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).mc,0))+' <small class="muted">su 40h</small></span></div>'
             +'<div class="row row--tap" data-dett="pagato"><span class="row__label">Masterclass pagate <small class="muted">prime 20h</small></span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).mcPagate,0))+'</span></div>'
@@ -3788,7 +3809,7 @@ import * as repo from './js/repo.js';
             +'<div class="row row--tap" data-dett="fuori"><span class="row__label">Ore fuori orario</span><span class="row__value '+(wks.reduce((a,m)=>a+weekInfo(m).fuori,0)?'neg':'')+'">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).fuori,0))+' <small class="muted">da autorizzare</small></span></div>'            +'<div class="row row--tap" data-dett="ferie"><span class="row__label">Ferie residue</span><span class="row__value">'+ferieRes+' <small class="muted">su '+ferieTot+' gg</small></span></div>'
             +'<div class="row row--tap" data-dett="malattia"><span class="row__label">Malattia</span><span class="row__value">'+malattia+' <small class="muted">gg</small></span></div>'
             +'<div class="row row--tap" data-dett="omessa"><span class="row__label">Omesse timbrature</span><span class="row__value '+(omessaCount()?'neg':'')+'">'+omessaCount()+'</span></div>'
-            +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza ordinaria e straordinario a credito; il riposo compensativo lo scala. Masterclass, straordinario pagato e studio restano a parte.</p>'
+            +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza ordinaria e straordinario a credito; il riposo compensativo lo scala. Masterclass, straordinario pagato e studio restano a parte. Le settimane senza nessuna timbratura non entrano nel saldo: vanno compilate o rimosse.</p>'
           +'</div></div></div>'
           +'<div id="saldoBox">'+saldoHTML()+'</div>'
           +'<div><div class="group-header">'+(ultima?'Ultima settimana':'Settimane')+'</div><div class="group">'+settimane+'</div>'
@@ -3912,6 +3933,7 @@ import * as repo from './js/repo.js';
     }
     /* riga sotto la barra: Masterclass e straordinario con il tetto delle 9h */
     function extraSettimanaHTML(mon){
+      if(settimanaVuota(mon))return '<div class="sum-warn">Nessuna timbratura in questa settimana: non entra nel saldo ore. Inserisci le ore, oppure rimuovila se non era lavorativa.</div>';
       const wi=weekInfo(mon);
       if(!wi.mc&&!wi.straord&&!wi.comp&&!wi.fuori&&!wi.mancanti&&wi.totale<=ORE_MAX_SETT)return '';
       const p=[];
@@ -3929,7 +3951,10 @@ import * as repo from './js/repo.js';
       azzeraCalcoli();
       if(!weekCursor) weekCursor=iso(mondayOf(new Date()));
       const mon=parseISO(weekCursor), sun=addDays(mon,6);
-      const obl=obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
+      /* settimana vuota: non ha ore dovute perche' non entra nel saldo */
+      const vuota=settimanaVuota(weekCursor);
+      const obl=vuota?0:obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
+      const esitoLab = vuota?'Non conteggiata':(c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari'));
       const esitoCls = c>0?'over':(c<0?'under':'ok');
       const esitoTxt = c>0?'😎 Eccedenza':(c<0?'⚠️ Sotto soglia':'✅ In pari');
       const range = mon.getMonth()===sun.getMonth()
@@ -3995,12 +4020,12 @@ import * as repo from './js/repo.js';
           +'<div class="card sum-card"><div class="sum-grid">'
             +'<div><div class="foot muted">Presenza</div><div class="num sum-v sum-big">'+fmtHM(tot)+'</div></div>'
             +'<div><div class="foot muted">Dovute</div><div class="num sum-v sum-big">'+fmtHM(obl)+'</div></div>'
-            +'<div><div class="foot muted">Credito</div><div class="num sum-v sum-big '+(c<0?'neg':(wi.credito>0?'pos':''))+'">'+fmtHM(c<0?c:wi.credito,true)+'</div></div>'
+            +'<div><div class="foot muted">Credito</div><div class="num sum-v sum-big '+(c<0?'neg':(wi.credito>0?'pos':''))+'">'+(vuota?'—':fmtHM(c<0?c:wi.credito,true))+'</div></div>'
           +'</div>'
           +'<div class="sum-studio foot muted">Studio <b class="num" id="sumStudio">'+fmtHM(weekStudy(weekCursor))+'</b></div>'
           +'<div style="display:flex;align-items:center;gap:12px;margin-top:14px">'
             +'<span class="meter" style="flex:1"><span class="meter__fill '+(c>0?'meter__fill--pos':(c<0?'meter__fill--neg':''))+'" style="width:'+Math.min(100,pctFill+overPct)+'%"></span><span class="meter__goal" style="left:'+goalLeft+'%"></span></span>'
-            +'<span class="badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''))+'">'+(c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari'))+'</span>'
+            +'<span class="badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''))+'">'+esitoLab+'</span>'
           +'</div>'
           +'<div id="sumExtra">'+extraSettimanaHTML(weekCursor)+'</div>'
           +'</div>'
@@ -4052,7 +4077,9 @@ import * as repo from './js/repo.js';
       const waMenu=document.getElementById('waMenu'); if(waMenu)waMenu.onclick=()=>{const b=document.getElementById('waBox'); b.hidden=!b.hidden; waMenu.hidden=!b.hidden;};
       const waRemove=document.getElementById('waRemove'); if(waRemove)waRemove.onclick=()=>{
         if(!confirm('Rimuovere l\'intera settimana come giornate lavorative? Gli orari inseriti verranno cancellati e la settimana non peserà sull\'obbligo.'))return;
-        for(let i=0;i<7;i++){const dd=addDays(mon,i),k=iso(dd); if(expectedFor(k)>0){DB.skipDays[k]=true;delete DB.entries[k];saveDay(k);}}
+        /* anche i giorni di riposo con qualcosa dentro (straordinario, permessi):
+           la settimana va svuotata tutta, altrimenti resta nel conteggio */
+        for(let i=0;i<7;i++){const dd=addDays(mon,i),k=iso(dd); if(expectedFor(k)>0||hasEntry(DB.entries[k])){DB.skipDays[k]=true;delete DB.entries[k];saveDay(k);}}
         delete DB.authorized[weekCursor]; saveAuth(weekCursor); refreshChip(); renderRegistro();
       };
       const waRestore=document.getElementById('waRestore'); if(waRestore)waRestore.onclick=()=>{
@@ -4067,14 +4094,15 @@ import * as repo from './js/repo.js';
     }
     function recalcWeekLive(el,key,e){
       azzeraCalcoli();
-      const obl=obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
+      const vuota=settimanaVuota(weekCursor);
+      const obl=vuota?0:obligationForWeek(weekCursor), tot=weekTotal(weekCursor), c=tot-obl;
       const sums=view.querySelectorAll('.sum-v');
       const wiL=weekInfo(weekCursor), credL=wiL.credito?wiL.credito:c;
-      if(sums[0]){sums[0].textContent=fmtHM(tot); sums[1].textContent=fmtHM(obl); sums[2].textContent=fmtHM(credL,true); sums[2].className='num sum-v '+(c<0?'neg':(credL>0?'pos':''));}
+      if(sums[0]){sums[0].textContent=fmtHM(tot); sums[1].textContent=fmtHM(obl); sums[2].textContent=vuota?'—':fmtHM(credL,true); sums[2].className='num sum-v '+(c<0?'neg':(credL>0?'pos':''));}
       const st=document.getElementById('sumStudio'); if(st)st.textContent=fmtHM(weekStudy(weekCursor));
       const ex=document.getElementById('sumExtra'); if(ex)ex.innerHTML=extraSettimanaHTML(weekCursor);
       const esEl=view.querySelector('.sum-esito');
-      if(esEl){esEl.className='badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''));esEl.textContent=c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari');}
+      if(esEl){esEl.className='badge sum-esito esito-badge '+(c>0?'badge--pos':(c<0?'badge--neg':''));esEl.textContent=vuota?'Non conteggiata':(c>0?'Eccedenza':(c<0?'Sotto soglia':'In pari'));}
       /* aggiorna la riga compatta del giorno che si sta modificando */
       const row=view.querySelector('.drow[data-open="'+key+'"]');
       if(row){

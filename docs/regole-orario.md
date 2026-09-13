@@ -121,3 +121,7 @@ recuperano in seguito. Modulo ufficiale da acquisire.
   autorizzato va comunque a credito.
 - Il credito scade il 31 ottobre: per ora la chiusura d'anno riporta il saldo
   come prima e non azzera nulla, in attesa di conferma.
+- Una settimana senza nessuna timbratura non entra nel saldo: l'app non puo'
+  sapere se sono ore dimenticate o una settimana non lavorativa. Viene
+  segnalata («Non conteggiata», elenco in Riepilogo) finche' non si compila
+  oppure non si rimuove con «Rimuovi settimana».
