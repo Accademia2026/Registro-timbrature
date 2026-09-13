@@ -92,6 +92,7 @@ export async function loadAll() {
     if (r.permesso_min != null) e.ph = r.permesso_min;
     if (r.studio_min != null) e.studyMin = r.studio_min;
     if (r.masterclass_min != null) e.mc = r.masterclass_min;
+    if (r.straord_aut_min != null) e.straordAut = r.straord_aut_min;
     if (r.nota) e.note = r.nota;
     if (Object.keys(e).length) entries[r.data] = e;
   }
@@ -196,13 +197,13 @@ export function saveGiorno(dateISO, entry, rimosso) {
   debounced('giorno:' + dateISO, async () => {
     const e = entry || {};
     const vuota = !e.act && !e.m1in && !e.m1out && !e.m2in && !e.m2out
-      && e.ph == null && (e.studyMin == null || e.studyMin === 0) && !e.mc && !e.note;
+      && e.ph == null && (e.studyMin == null || e.studyMin === 0) && !e.mc && !e.straordAut && !e.note;
     if (vuota && !rimosso) {
       const { error } = await supabase.from('timbrature').delete().eq('data', dateISO);
       if (error) onError('cancellazione giorno', { error });
       return;
     }
-    const { error } = await supabase.from('timbrature').upsert({
+    const riga = {
       data: dateISO,
       attivita: orNull(e.act),
       m1in: orNull(e.m1in), m1out: orNull(e.m1out),
@@ -210,9 +211,17 @@ export function saveGiorno(dateISO, entry, rimosso) {
       permesso_min: e.ph ?? null,
       studio_min: e.studyMin ?? null,
       masterclass_min: e.mc ?? null,
+      straord_aut_min: e.straordAut ?? null,
       nota: orNull(e.note),
       rimosso: !!rimosso,
-    }, { onConflict: 'user_id,data' });
+    };
+    let { error } = await supabase.from('timbrature').upsert(riga, { onConflict: 'user_id,data' });
+    /* colonna non ancora creata (script 13 non eseguito): si salva il resto */
+    if (error && /straord_aut_min/.test(error.message || '')) {
+      const { straord_aut_min, ...senza } = riga;
+      ({ error } = await supabase.from('timbrature').upsert(senza, { onConflict: 'user_id,data' }));
+      if (!error) onError('salvataggio giorno', { error: { message: 'Per salvare lo straordinario autorizzato serve lo script 13' } });
+    }
     if (error) onError('salvataggio giorno', { error });
   });
 }
