@@ -4126,7 +4126,7 @@ import * as repo from './js/repo.js';
         if(el.dataset.scht!=null){
           const wd=+(el.dataset.s ?? el.dataset.e);
           const giorno=SD_[IDX_.indexOf(wd)]||'';
-          w.textContent=(el.dataset.s!=null?'inizio':'fine')+' · '+giorno+' · '+({pres:'presenza',study:'studio',mc:'masterclass'}[el.dataset.k]||'');
+          w.textContent=(el.dataset.s!=null?'inizio':'fine')+' · '+giorno+' · '+({pres:'presenza',study:'studio',mc:'masterclass',straord:'straordinario'}[el.dataset.k]||'');
         } else {
           const dd=parseISO(el.dataset.k);
           w.textContent=(KP_LABELS[el.dataset.f]||'')+' · '+DAYNAMES[(dd.getDay()+6)%7]+' '+pad(dd.getDate())+'/'+pad(dd.getMonth()+1);
@@ -4302,7 +4302,7 @@ import * as repo from './js/repo.js';
         const dd=addDays(mon,i),dISO=iso(dd),isT=dISO===todayISO,wd=dd.getDay();
         head+='<div class="ch '+(isT?'today':'')+'"><div class="dn">'+DAYNAMES[i].slice(0,3)+'</div><div class="dd">'+pad(dd.getDate())+'</div></div>';
         let cell='<div class="cal-col '+(isT?'today':'')+'" data-date="'+dISO+'">';
-        cell+=bandHTML(presSl[wd],'pres')+bandHTML(studySl[wd],'study')+bandHTML({start:(presSl[wd]||{}).mcs,end:(presSl[wd]||{}).mce},'mc');
+        cell+=bandHTML(presSl[wd],'pres')+bandHTML(studySl[wd],'study')+bandHTML({start:(presSl[wd]||{}).sts,end:(presSl[wd]||{}).ste},'stra')+bandHTML({start:(presSl[wd]||{}).mcs,end:(presSl[wd]||{}).mce},'mc');
         for(let h=H0;h<H1;h++) cell+='<div class="hr"></div>';
         /* gli eventi fuori dalla fascia visibile (es. finiti alle 5:00 per un trascinamento sbagliato)
            si mostrano comunque, ancorati al bordo, cosi' si possono aprire e correggere */
@@ -4327,7 +4327,7 @@ import * as repo from './js/repo.js';
           +'</div>'
         +'</div>'
         +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc(evName(appunti.ev))+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
-        +'<p class="diary-intro"><span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot mc"></span> Masterclass <button class="linkbtn" id="btnIcs" style="padding:2px 6px;margin-left:8px">⤓ Esporta calendario</button></p>'
+        +'<p class="diary-intro"><span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot stra"></span> straordinario · <span class="lg-dot mc"></span> Masterclass <button class="linkbtn" id="btnIcs" style="padding:2px 6px;margin-left:8px">⤓ Esporta calendario</button></p>'
         +'<p class="sec-d">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana.</p>'
         +'<div class="cal-wrap"><div class="cal"><div class="cal-head">'+head+'</div><div class="cal-body">'+gutter+cols+'</div></div></div>';
     }
@@ -5322,7 +5322,17 @@ import * as repo from './js/repo.js';
       const disp=A.disponibili.filter(l=>l.tipo==="credito"||l.tipo==="creditoMC");
       const totDisp=A.disponibili.reduce((s,l)=>s+l.resto,0);
       const rigaOre=(i,data,ore)=>'<div class="mrow"><div class="mfield"><label>'+(i===0?'Data straordinario':'&nbsp;')+'</label><input type="date" data-rsData="'+i+'" value="'+(data||'')+'"></div><div class="mfield" style="flex:.6"><label>'+(i===0?'Ore effettuate':'&nbsp;')+'</label><input type="text" data-rsOre="'+i+'" value="'+(ore||'')+'" placeholder="es. 2h"></div></div>';
-      const righe=[0,1,2,3].map(i=>{const l=disp[i]; return rigaOre(i, l?iso(addDays(parseISO(l.chiave),3)):'', l?fmtHM(l.resto):'');}).join('');
+      /* il modulo indica il giorno in cui il credito e' stato maturato */
+      const giornoCredito=(mon,tipo)=>{
+        for(let i=0;i<7;i++){
+          const k=iso(addDays(parseISO(mon),i)); if(isSkipped(k))continue;
+          const en=DB.entries[k]; if(!en||!en.act)continue;
+          const w=dayWorkInfo(k,en);
+          if(tipo==='creditoMC'?w.mc>0:(w.straord>0||w.base>expectedFor(k)))return k;
+        }
+        return iso(addDays(parseISO(mon),3));
+      };
+      const righe=[0,1,2,3].map(i=>{const l=disp[i]; return rigaOre(i, l?giornoCredito(l.chiave,l.tipo):'', l?fmtHM(l.resto):'');}).join('');
       modalBg.innerHTML='<div class="modal"><h3>Richiesta riposo compensativo</h3><div class="mbody">'
         +'<p class="hint" style="margin:0">Crediti ancora disponibili: <b>'+fmtHM(totDisp)+'</b>'+(disp.length?' · proposti dal più vecchio, con le ore non ancora usate; correggi date e ore come servono.':'. Nessuna settimana con credito disponibile: compila a mano.')+'</p>'
         +'<div class="mfield"><label>Nome e cognome</label><input type="text" id="rsNome" value="'+esc(nome)+'"></div>'
@@ -5556,44 +5566,50 @@ import * as repo from './js/repo.js';
       const q=x=>view.querySelector('[data-scht][data-k="'+kind+'"][data-pi="'+pi+'"][data-'+x+'="'+wd+'"]');
       const bs=q('s'), be=q('e');
       if(kind==='mc') return { start: bs?(bs.dataset.val||''):(m.mcs||''), end: be?(be.dataset.val||''):(m.mce||''), pausa:0 };
+      if(kind==='straord'){
+        const bp2=view.querySelector('input.schpzin[data-k="straord"][data-pi="'+pi+'"][data-bp="'+wd+'"]');
+        return { start: bs?(bs.dataset.val||''):(m.sts||''), end: be?(be.dataset.val||''):(m.ste||''), pausa: bp2?(parseInt(bp2.value,10)||0):(+m.stp||0) };
+      }
       const bp=view.querySelector('input.schpzin[data-k="'+kind+'"][data-pi="'+pi+'"][data-bp="'+wd+'"]');
       return { start: bs?(bs.dataset.val||''):(m.start||''), end: be?(be.dataset.val||''):(m.end||''), pausa: bp?(parseInt(bp.value,10)||0):(+m.pausa||0) };
     }
     function nettoSlot(sl){const ds=t2m(sl.start),de=t2m(sl.end);return (ds!=null&&de!=null&&de>ds)?Math.max(0,(de-ds)-(sl.pausa||0)):0;}
     function periodNet(kind,pi,wd){return nettoSlot(slotDi(kind,pi,wd));}
     function giornoInfo(pi,wd){
-      const a=slotDi('pres',pi,wd), b=slotDi('study',pi,wd), m=slotDi('mc',pi,wd);
-      const pn=nettoSlot(a), sn=nettoSlot(b), mn=nettoSlot(m);
-      const inters=(x,nx,y,ny)=>nx>0&&ny>0&&t2m(y.start)<t2m(x.end)&&t2m(y.end)>t2m(x.start);
-      const overlap=inters(a,pn,b,sn)||inters(a,pn,m,mn)||inters(b,sn,m,mn);
-      const tot=pn+sn+mn;
-      return {a,b,m,pn,sn,mn,tot,overlap,err:overlap||tot>DAILY_CAP};
+      const a=slotDi('pres',pi,wd), b=slotDi('study',pi,wd), m=slotDi('mc',pi,wd), x=slotDi('straord',pi,wd);
+      const pn=nettoSlot(a), sn=nettoSlot(b), mn=nettoSlot(m), xn=nettoSlot(x);
+      const inters=(u,nu,v,nv)=>nu>0&&nv>0&&t2m(v.start)<t2m(u.end)&&t2m(v.end)>t2m(u.start);
+      const cop=[[a,pn],[b,sn],[m,mn],[x,xn]];
+      let overlap=false;
+      for(let i=0;i<cop.length;i++)for(let j=i+1;j<cop.length;j++)if(inters(cop[i][0],cop[i][1],cop[j][0],cop[j][1]))overlap=true;
+      const tot=pn+sn+mn+xn;
+      return {a,b,m,x,pn,sn,mn,xn,tot,overlap,err:overlap||tot>DAILY_CAP};
     }
     function verificaPeriodo(pi){
-      let pres=0,stud=0,mc=0; const errori=[], giorni={};
+      let pres=0,stud=0,mc=0,stra=0; const errori=[], avvisi=[], giorni={};
       IDX_.forEach((wd,i)=>{
-        const g=giornoInfo(pi,wd); giorni[wd]=g; pres+=g.pn; stud+=g.sn; mc+=g.mn;
+        const g=giornoInfo(pi,wd); giorni[wd]=g; pres+=g.pn; stud+=g.sn; mc+=g.mn; stra+=g.xn;
         if(g.overlap)errori.push(SD_[i]+': le fasce si sovrappongono');
         if(g.tot>DAILY_CAP)errori.push(SD_[i]+': '+fmtHM(g.tot)+' supera le 9 ore');
       });
-      /* 36h = presenza ordinaria + studio + Masterclass oltre il tetto (le ore erose restano dovute).
-         La presenza oltre le 24h ordinarie e' consentita (straordinario pianificato o recupero
-         di debito): non entra nelle ore dovute e viene solo segnalata. */
-      const avvisi=[];
-      const extra=Math.max(0,pres-ORE_PRES_ORD), presOrd=pres-extra;
-      const oltre=Math.max(0,mc-CAP_STRA), tot=presOrd+stud+oltre, totAll=pres+stud+mc;
+      /* obbligo: 24h di presenza ordinaria + 12h di studio. Le ore di Masterclass
+         oltre le 9h di straordinario riducono l ordinario che si puo pianificare. */
+      const oltreMC=Math.max(0,mc-CAP_STRA);
+      const tot=pres+stud+oltreMC, totAll=pres+stud+mc+stra;
       if(tot<ORE_SETT)errori.push('Mancano '+fmtHM(ORE_SETT-tot)+' alle 36 ore settimanali');
       if(tot>ORE_SETT)errori.push('Superi le 36 ore di '+fmtHM(tot-ORE_SETT));
       if(totAll>ORE_MAX_SETT)errori.push('Superi le 45 ore complessive di '+fmtHM(totAll-ORE_MAX_SETT));
-      if(extra>0)avvisi.push(fmtHM(extra)+' di presenza oltre le 24 ordinarie: straordinario pianificato o recupero di debito. Non diventano ore dovute: fatte, saranno ore in più da autorizzare.');
-      return {pres,presOrd,extra,stud,mc,oltre,tot,totAll,errori,avvisi,giorni};
-    }
-    function riassuntoGiorno(pi,wd){
+      if(stra>CAP_STRA)errori.push('Straordinario ordinario oltre le 9 ore: '+fmtHM(stra));
+      if(pres<ORE_PRES_ORD&&oltreMC>0)avvisi.push('La Masterclass oltre le 9 ore riduce l ordinario a '+fmtHM(pres)+': le '+fmtHM(ORE_PRES_ORD-pres)+' non fatte restano dovute e diventano debito da recuperare.');
+      if(stra>0)avvisi.push(fmtHM(stra)+' di straordinario ordinario pianificato: gia autorizzato, va a credito.');
+      return {pres,stud,mc,stra,oltre:oltreMC,tot,totAll,errori,avvisi,giorni};
+    }    function riassuntoGiorno(pi,wd){
       const g=giornoInfo(pi,wd);
       /* solo le fasce presenti: niente righe di riempimento */
-      if(!g.pn&&!g.sn&&!g.mn)return '<span class="hint2">riposo</span>';
+      if(!g.pn&&!g.sn&&!g.mn&&!g.xn)return '<span class="hint2">riposo</span>';
       let h=g.pn?'<div><i class="kl2 p"></i>'+g.a.start+'–'+g.a.end+(g.a.pausa?' <span class="hint2">pausa '+g.a.pausa+'</span>':'')+'</div>':'';
       if(g.sn)h+='<div class="s2"><i class="kl2 s"></i>'+g.b.start+'–'+g.b.end+(g.b.pausa?' <span class="hint2">pausa '+g.b.pausa+'</span>':'')+'</div>';
+      if(g.xn)h+='<div class="s2"><i class="kl2 x"></i>'+g.x.start+'–'+g.x.end+(g.x.pausa?' <span class="hint2">pausa '+g.x.pausa+'</span>':'')+'</div>';
       if(g.mn)h+='<div class="s2"><i class="kl2 m"></i>'+g.m.start+'–'+g.m.end+'</div>';
       return h;
     }
@@ -5614,6 +5630,7 @@ import * as repo from './js/repo.js';
       const v=verificaPeriodo(pi);
       return '<span><i class="kl2 p"></i>Presenza <b class="mono">'+fmtHM(v.pres)+'</b></span>'
         +'<span><i class="kl2 s"></i>Studio <b class="mono">'+fmtHM(v.stud)+'</b></span>'
+        +(v.stra?'<span><i class="kl2 x"></i>Straordinario <b class="mono">'+fmtHM(v.stra)+'</b></span>':'')
         +(v.mc?'<span><i class="kl2 m"></i>Masterclass <b class="mono">'+fmtHM(v.mc)+'</b>'+(v.oltre?' <small class="neg">+'+fmtHM(v.oltre)+' oltre il tetto</small>':'')+'</span>':'')
         +'<span class="big2 mono'+(v.tot===ORE_SETT?'':' neg')+'">'+fmtHM(v.tot)+' / 36h'+(v.mc?' <small class="'+(v.totAll>ORE_MAX_SETT?'neg':'muted')+'">· '+fmtHM(v.totAll)+' in tutto</small>':'')+'</span>'
         +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'')
@@ -5648,7 +5665,10 @@ import * as repo from './js/repo.js';
                 +'<div class="lab2"><i class="kl2 s"></i>Studio</div>'
                 +'<div class="pills2">'+tbtn('study',pi,wd,'s',ss.start||'')+'<span class="arr2">→</span>'+tbtn('study',pi,wd,'e',ss.end||'')
                   +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="study" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(ss.pausa||'')+'" placeholder="0"></div>'
-                +'<div class="lab2"><i class="kl2 m"></i>Masterclass <span class="hint2">pagate a parte</span></div>'
+                +'<div class="lab2"><i class="kl2 x"></i>Straordinario <span class="hint2">gia autorizzato</span></div>'
+                +'<div class="pills2">'+tbtn('straord',pi,wd,'s',sl.sts||'')+'<span class="arr2">→</span>'+tbtn('straord',pi,wd,'e',sl.ste||'')
+                  +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="straord" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.stp||'')+'" placeholder="0"></div>'
+                +'<div class="lab2"><i class="kl2 m"></i>Masterclass</div>'
                 +'<div class="pills2">'+tbtn('mc',pi,wd,'s',sl.mcs||'')+'<span class="arr2">→</span>'+tbtn('mc',pi,wd,'e',sl.mce||'')+'</div>'
                 +'<div class="hint2" data-dayhint="'+pi+'-'+wd+'">'+hintGiorno(pi,wd)+'</div>'
               +'</div>';
@@ -5797,11 +5817,11 @@ import * as repo from './js/repo.js';
         P[pi].to=t; if(S[pi])S[pi].to=t;
       });
       /* 'mc' scrive mcs/mce dentro le slot di presenza; schedule[] resta la sola presenza ordinaria */
-      [['pres','start','end'],['study','start','end'],['mc','mcs','mce']].forEach(([kind,fs,fe])=>{
+      [['pres','start','end'],['study','start','end'],['mc','mcs','mce'],['straord','sts','ste']].forEach(([kind,fs,fe])=>{
         const list=kind==='study'?S:P;
         view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-s]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.s;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd][fs]=b.dataset.val||'';});
         view.querySelectorAll('[data-scht][data-k="'+kind+'"][data-e]').forEach(b=>{const pi=+b.dataset.pi;if(!list[pi])return;const wd=+b.dataset.e;list[pi].slots=list[pi].slots||{};list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd][fe]=b.dataset.val||'';});
-        view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd].pausa=Math.max(0,parseInt(i.value,10)||0);});
+        view.querySelectorAll('input[data-bp][data-k="'+kind+'"]').forEach(i=>{const pi=+i.dataset.pi;if(!list[pi])return;const wd=+i.dataset.bp;list[pi].slots[wd]=list[pi].slots[wd]||{};list[pi].slots[wd][kind==='straord'?'stp':'pausa']=Math.max(0,parseInt(i.value,10)||0);});
         list.forEach(p=>{p.slots=p.slots||{};p.schedule=p.schedule||{};IDX_.forEach(wd=>{p.schedule[wd]=nettoSlot(p.slots[wd]||{});});p.schedule[0]=0;p.slots[0]={};});
       });
       ordinaCoppie();

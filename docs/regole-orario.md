@@ -108,4 +108,16 @@ recuperano in seguito. Modulo ufficiale da acquisire.
 - la domanda sulle Masterclass oltre il tetto delle 9 ore: l'erosione è
   automatica e il debito nasce da sé.
 
-Restano da decidere solo le autorizzazioni a posteriori delle ore fuori orario.
+## 9. Decisioni operative
+
+- Nessuna tolleranza: entrare tardi e uscire tardi della stessa misura e' una
+  giornata piena, perche' si confrontano le durate.
+- La pausa prevista si sottrae solo se non e' stata timbrata.
+- Le ore autorizzate a posteriori si indicano nel giorno, in minuti, anche solo
+  in parte: chiesti 30 minuti, fatti 35, se ne autorizzano 30.
+- Le ore autorizzate prendono il tipo dell'ultima fascia della giornata: dopo
+  una Masterclass restano Masterclass, altrimenti sono straordinario ordinario.
+- Straordinario ordinario oltre le 9 ore settimanali: si segnala, ma se e'
+  autorizzato va comunque a credito.
+- Il credito scade il 31 ottobre: per ora la chiusura d'anno riporta il saldo
+  come prima e non azzera nulla, in attesa di conferma.

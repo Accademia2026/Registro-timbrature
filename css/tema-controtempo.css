@@ -529,3 +529,12 @@ p.sec-d[data-aiuto],p.group-note[data-aiuto]{margin-top:6px}
 
 /* avviso non bloccante nell orario (presenza oltre le 24 ordinarie) */
 .warn2.note2{background:var(--teal-wash);color:var(--teal);border-left-color:var(--teal)}
+
+/* fascia straordinario ordinario nell orario e nel calendario */
+#appRoot,#appRoot[data-theme]{--stra:#c98a2e;--stra-wash:rgba(201,138,46,.12)}
+html[data-theme="dark"] #appRoot,#appRoot[data-theme="dark"]{--stra:#e0b45f;--stra-wash:rgba(224,180,95,.18)}
+.kl2.x{background:var(--stra)}
+#appRoot .cal-band.stra{background:var(--stra-wash);border-top:2px solid var(--stra);border-bottom:2px solid var(--stra)}
+.lg-dot.stra{background:var(--stra-wash);border:1px solid var(--stra)}
+.ios .day__note.ok{color:var(--teal)}
+.fuori-row{flex-wrap:wrap}
