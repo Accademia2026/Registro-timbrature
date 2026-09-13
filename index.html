@@ -3156,7 +3156,8 @@ import * as repo from './js/repo.js';
         /* le ore mancanti sono coperte da permessi a ore e riposo compensativo */
         mancanti:(beh==='work'||beh==='hour')?Math.max(0,gc.mancanti-comp-(beh==='hour'?(+e.ph||0):0)):0,
         fuori:gc.fuori, fuoriNonAut:Math.max(0,gc.fuori-aut),
-        capped, cappedBase:Math.min(base,DAILY_CAP), beh, deducted:pw.autoBreak+capped};
+        /* la pausa tolta e' quella delle fasce: il riposo compensativo non entra nel conto */
+        pausa:gc.pausa, capped, cappedBase:Math.min(base,DAILY_CAP), beh, deducted:gc.pausa+capped};
     }
     function dayStraord(date,e){return dayWorkInfo(date,e).straord;}
     function weekStraord(mon){
@@ -3238,15 +3239,22 @@ import * as repo from './js/repo.js';
     function giornoCalc(date,e){
       const fasce=fasceGiorno(date), iv=intervalliTimbrati(e);
       const timbrato=iv.reduce((s,[a,b])=>s+(b-a),0);
-      const r={timbrato, ord:0, straord:0, mc:0, mancanti:0, ecc:[], fuori:0};
+      const r={timbrato, ord:0, straord:0, mc:0, mancanti:0, ecc:[], fuori:0, pausa:0};
       if(!fasce.length){ if(timbrato>0){ r.ecc.push({tipo:'straord',min:timbrato}); r.fuori=timbrato; } return r; }
       const conf=[]; for(let i=0;i<fasce.length-1;i++)conf.push(Math.round((fasce[i].e+fasce[i+1].s)/2));
       fasce.forEach((f,i)=>{
         const ra=i===0?-Infinity:conf[i-1], rb=i===fasce.length-1?Infinity:conf[i];
         let att=0, pezzi=0;
         iv.forEach(([a,b])=>{ const q=Math.min(b,rb)-Math.max(a,ra); if(q>0){att+=q;pezzi++;} });
-        /* pausa prevista e non timbrata: si toglie dalle ore di quella fascia */
-        if(f.pausa&&pezzi<2)att=Math.max(0,att-f.pausa);
+        /* Pausa prevista e non timbrata: si toglie dalle ore di quella fascia,
+           ma solo per la parte che supera le 7h12 di lavoro effettivo, cioe'
+           la soglia oltre la quale la pausa scatta per legge. Chi timbra 7h
+           non deve nessuna pausa, e le ore di riposo compensativo aggiunte
+           dopo non fanno scattare nulla: non sono lavoro. */
+        if(f.pausa&&pezzi<2){
+          const dovuta=Math.min(f.pausa, Math.max(0, att-AUTO_BREAK_THRESHOLD));
+          att=Math.max(0,att-dovuta); r.pausa+=dovuta;
+        }
         f.att=att; f.contato=Math.min(att,f.net); f.ecc=att-f.contato;
       });
       fasce.forEach(f=>{
@@ -3927,7 +3935,7 @@ import * as repo from './js/repo.js';
           +'<span class="muted">min</span><button class="linkbtn" data-autall="'+key+'">tutti</button></div>';
       }
       if(wI.mancanti>0)x+='<div class="day__note">Mancano '+fmtHM(wI.mancanti)+' rispetto alla fascia prevista</div>';
-      if(wI.deducted>0){const parts=[];if(wI.pw.autoBreak>0)parts.push('pausa '+fmtHM(wI.pw.autoBreak));if(wI.capped>0)parts.push('tetto 9h');x+='<div class="day__note">−'+fmtHM(wI.deducted)+' · '+parts.join(' + ')+'</div>';}
+      if(wI.deducted>0){const parts=[];if(wI.pausa>0)parts.push('pausa '+fmtHM(wI.pausa));if(wI.capped>0)parts.push('tetto 9h');x+='<div class="day__note">−'+fmtHM(wI.deducted)+' · '+parts.join(' + ')+'</div>';}
       if(wI.straord>0)x+='<div class="day__note ok">Straordinario '+fmtHM(wI.straord)+' · va a credito</div>';
       if(wI.mc>0)x+='<div class="day__note ok">Masterclass '+fmtHM(wI.mc)+' · presenza ordinaria '+fmtHM(wI.base)+'</div>';      return x;
     }

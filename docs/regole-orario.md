@@ -36,7 +36,14 @@ Una fascia configurata vale come attività già autorizzata.
    - fascia 9:00–14:00, timbro 8:58–14:06 → 5h00 contate, 8 minuti fuori orario
    - fascia 9:00–14:00, timbro 9:05–13:50 → 4h45 contate, 15 minuti mancanti
 3. Se la fascia prevede una pausa e la pausa non è stata timbrata, la pausa si
-   sottrae dalle ore timbrate di quella fascia.
+   sottrae dalle ore timbrate di quella fascia, ma solo per la parte che supera
+   le **7h12 di lavoro effettivo**, la soglia oltre la quale la pausa scatta per
+   legge: chi timbra 7h non deve nessuna pausa. Il riposo compensativo non è
+   lavoro e non fa scattare la pausa, anche se porta il totale del giorno oltre
+   le 7h12.
+   - fascia 9:00–17:30 con 30' di pausa, timbro 9:15–16:15 (7h) + 1h di riposo
+     compensativo → 7h contate + 1h = 8h00, nessuna pausa tolta
+   - stessa fascia, timbro 9:00–17:30 (8h30) → 30' tolti, 8h00 contate
 4. **Nessuna tolleranza**, né in più né in meno.
 5. Le ore mancanti fanno debito e generano un avviso.
 6. Le ore in più, o timbrate fuori da ogni fascia, non contano: restano
@@ -112,7 +119,9 @@ recuperano in seguito. Modulo ufficiale da acquisire.
 
 - Nessuna tolleranza: entrare tardi e uscire tardi della stessa misura e' una
   giornata piena, perche' si confrontano le durate.
-- La pausa prevista si sottrae solo se non e' stata timbrata.
+- La pausa prevista si sottrae solo se non e' stata timbrata, e solo per la
+  parte di lavoro effettivo oltre le 7h12: non si scende mai sotto quella
+  soglia togliendo la pausa.
 - Le ore autorizzate a posteriori si indicano nel giorno, in minuti, anche solo
   in parte: chiesti 30 minuti, fatti 35, se ne autorizzano 30.
 - Le ore autorizzate prendono il tipo dell'ultima fascia della giornata: dopo
