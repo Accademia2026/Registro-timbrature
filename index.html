@@ -3387,7 +3387,7 @@ import * as repo from './js/repo.js';
        ogni weekInfo rifaceva tutta la storia del saldo (lento con molte
        settimane). azzeraCalcoli() la butta via a ogni modifica o ridisegno. */
     let _serie=null;
-    function azzeraCalcoli(){ _serie=null; }
+    function azzeraCalcoli(){ _serie=null; _alloc=null; }
     function serieSettimane(){
       if(_serie)return _serie;
       const lista=[]; let bal=DB.initialBalanceMin||0, mcAnno=0;
@@ -3610,40 +3610,78 @@ import * as repo from './js/repo.js';
        compensativi; un debito senza crediti resta scoperto finche' non arriva
        un credito nuovo. Cosi' si sa quando un debito e' stato ripianato e con
        quali ore, e quali ore di credito sono ancora disponibili. */
+    /* chiave con cui un giorno di straordinario indica QUALE debito ripiana
+       (e.recup): 'deb:<lunedi>', 'rip:<giorno>' oppure 'iniziale' */
+    function chiaveDebito(d){ return d.chiave==='iniziale'?'iniziale':((d.tipo==='riposo'?'rip:':'deb:')+d.chiave); }
+    /* come serieSettimane: si calcola una volta sola per disegnata */
+    let _alloc=null;
     function allocazioniSaldo(){
-      const lotti=[], debiti=[], scoperti=[];
-      const consuma=d=>{
-        let rest=d.min;
-        for(const l of lotti){ if(rest<=0)break; if(l.resto<=0)continue; const q=Math.min(l.resto,rest); l.resto-=q; rest-=q; l.usi.push({tipo:d.tipo,chiave:d.chiave,min:q}); d.coperto.push({lotto:l,min:q}); }
-        d.scoperto=rest; if(rest>0)scoperti.push(d);
-      };
-      const aggiungiLotto=l=>{
-        lotti.push(l);
-        for(const d of scoperti){ if(l.resto<=0)break; if(d.scoperto<=0)continue; const q=Math.min(l.resto,d.scoperto); l.resto-=q; d.scoperto-=q; l.usi.push({tipo:d.tipo,chiave:d.chiave,min:q}); d.coperto.push({lotto:l,min:q}); }
-      };
+      if(_alloc)return _alloc;
+      const lotti=[], debiti=[];
+      const aggiungiLotto=l=>{ lotti.push(l); };
+      const segnaDebito=d=>{ d.scoperto=d.min; debiti.push(d); };
       const bal0=DB.initialBalanceMin||0;
       if(bal0>0) aggiungiLotto({tipo:'iniziale',chiave:'iniziale',min:bal0,resto:bal0,usi:[]});
-      else if(bal0<0){ const d={tipo:'debito',chiave:'iniziale',min:-bal0,coperto:[],scoperto:0}; debiti.push(d); consuma(d); }
+      else if(bal0<0) segnaDebito({tipo:'debito',chiave:'iniziale',min:-bal0,coperto:[],scoperto:0});
       /* i crediti si registrano GIORNO per giorno: il modulo di riposo
          compensativo deve indicare la data in cui lo straordinario e' stato
          prestato, prendendo prima le ore piu' vecchie */
       for(const {mon,wi} of serieSettimane().lista){
         const giorni=[];
         for(let i=0;i<7;i++){ const k=iso(addDays(parseISO(mon),i)); if(isSkipped(k))continue; giorni.push(k); }
-        giorni.forEach(k=>{ const c=dayComp(DB.entries[k]); if(c>0){ const d={tipo:'riposo',chiave:k,mon,min:c,coperto:[],scoperto:0}; debiti.push(d); consuma(d); } });
-        if(wi.c<0){ const d={tipo:'debito',chiave:mon,mon,min:-wi.c,coperto:[],scoperto:0}; debiti.push(d); consuma(d); }
+        giorni.forEach(k=>{ const c=dayComp(DB.entries[k]); if(c>0)segnaDebito({tipo:'riposo',chiave:k,mon,min:c,coperto:[],scoperto:0}); });
+        if(wi.c<0) segnaDebito({tipo:'debito',chiave:mon,mon,min:-wi.c,coperto:[],scoperto:0});
         /* ore ordinarie in piu' rispetto all'obbligo: credito della settimana */
         if(wi.c>0) aggiungiLotto({tipo:'credito',chiave:mon,mon,min:wi.c,resto:wi.c,usi:[],giorno:null});
-        /* straordinario ordinario, giorno per giorno */
-        giorni.forEach(k=>{ const en=DB.entries[k]; if(!en||!en.act)return; const s=dayWorkInfo(k,en).straord; if(s>0)aggiungiLotto({tipo:'credito',chiave:mon,mon,min:s,resto:s,usi:[],giorno:k}); });
+        /* straordinario ordinario, giorno per giorno. e.recup dice a quale
+           debito va: quella scelta viene servita prima dell'ordine automatico */
+        giorni.forEach(k=>{ const en=DB.entries[k]; if(!en||!en.act)return; const s=dayWorkInfo(k,en).straord; if(s>0)aggiungiLotto({tipo:'credito',chiave:mon,mon,min:s,resto:s,usi:[],giorno:k,dest:en.recup||null}); });
         /* Masterclass a credito: si ripartisce sui giorni con Masterclass, in ordine di data */
         let restoMC=wi.mcCredito;
         if(restoMC>0)giorni.forEach(k=>{ if(restoMC<=0)return; const en=DB.entries[k]; if(!en||!en.act)return; const m=dayWorkInfo(k,en).mc; if(m<=0)return; const q=Math.min(m,restoMC); restoMC-=q; aggiungiLotto({tipo:'creditoMC',chiave:mon,mon,min:q,resto:q,usi:[],giorno:k}); });
         if(restoMC>0) aggiungiLotto({tipo:'creditoMC',chiave:mon,mon,min:restoMC,resto:restoMC,usi:[],giorno:null});
       }
-      return {lotti,debiti,disponibili:lotti.filter(l=>l.resto>0)};
+      /* attribuzione: prima gli abbinamenti scelti a mano, poi il resto in
+         ordine di data (il debito piu' vecchio prende il credito piu' vecchio) */
+      const copri=(l,d)=>{ const q=Math.min(l.resto,d.scoperto); if(q<=0)return; l.resto-=q; d.scoperto-=q; l.usi.push({tipo:d.tipo,chiave:d.chiave,min:q,scelto:l.dest===chiaveDebito(d)}); d.coperto.push({lotto:l,min:q}); };
+      for(const l of lotti){ if(!l.dest||l.resto<=0)continue; const d=debiti.find(x=>chiaveDebito(x)===l.dest); if(d)copri(l,d); }
+      for(const d of debiti){ if(d.scoperto<=0)continue; for(const l of lotti){ if(d.scoperto<=0)break; if(l.resto>0)copri(l,d); } }
+      _alloc={lotti,debiti,disponibili:lotti.filter(l=>l.resto>0)};
+      return _alloc;
     }
     const etichettaChiave=(tipo,chiave)=>chiave==='iniziale'?'saldo iniziale':(tipo==='riposo'?'riposo del '+dataItFull(chiave):'settimana '+rangeSettimana(chiave));
+    /* debiti gia' maturati alla data del giorno: sono quelli che lo
+       straordinario di quel giorno puo' dichiarare di recuperare */
+    function debitiFinoA(dISO){
+      const mon=monOf(dISO);
+      return allocazioniSaldo().debiti.filter(d=>d.chiave==='iniziale'||(d.tipo==='riposo'?d.chiave<=dISO:d.mon<=mon));
+    }
+    function opzioniRecupero(key,e){
+      const scelto=(e&&e.recup)||'';
+      let trovato=false;
+      const voce=d=>{
+        const v=chiaveDebito(d); if(v===scelto)trovato=true;
+        const resta=d.scoperto>0?' · resta '+fmtHM(d.scoperto)
+          :((d.coperto||[]).some(c=>c.lotto.giorno===key)?' · coperto da questo giorno':' · già coperto');
+        return '<option value="'+esc(v)+'"'+(v===scelto?' selected':'')+'>'+esc(etichettaChiave(d.tipo,d.chiave)+' · '+fmtHM(d.min)+resta)+'</option>';
+      };
+      const tutti=debitiFinoA(key), aperti=tutti.filter(d=>d.scoperto>0), chiusi=tutti.filter(d=>d.scoperto<=0);
+      let opts='<option value="">automatico · prima i debiti più vecchi</option>';
+      if(aperti.length)opts+='<optgroup label="Ancora da recuperare">'+aperti.map(voce).join('')+'</optgroup>';
+      if(chiusi.length)opts+='<optgroup label="Già coperti da altro credito">'+chiusi.map(voce).join('')+'</optgroup>';
+      if(scelto&&!trovato)opts+='<option value="'+esc(scelto)+'" selected>'+esc(scelto)+' · debito non più presente</option>';
+      return opts;
+    }
+    /* dove sono finite le ore di straordinario di quel giorno */
+    function recuperoGiornoHTML(key){
+      const ls=allocazioniSaldo().lotti.filter(l=>l.tipo==='credito'&&l.giorno===key);
+      if(!ls.length)return '';
+      const usi={}; ls.forEach(l=>l.usi.forEach(u=>{const k=u.tipo+'|'+u.chiave; usi[k]=(usi[k]||0)+u.min;}));
+      const parti=Object.entries(usi).map(([k,min])=>{const [t,c]=k.split('|'); return fmtHM(min)+' → '+etichettaChiave(t,c);});
+      const resto=ls.reduce((s,l)=>s+l.resto,0);
+      if(resto>0)parti.push(fmtHM(resto)+' ancora a credito');
+      return parti.join(' · ');
+    }
     function schedaMovimento(m){
       const A=allocazioniSaldo();
       const riga=(l,v)=>'<div class="arow"><span>'+l+'</span><b>'+v+'</b></div>';
@@ -3936,7 +3974,13 @@ import * as repo from './js/repo.js';
       }
       if(wI.mancanti>0)x+='<div class="day__note">Mancano '+fmtHM(wI.mancanti)+' rispetto alla fascia prevista</div>';
       if(wI.deducted>0){const parts=[];if(wI.pausa>0)parts.push('pausa '+fmtHM(wI.pausa));if(wI.capped>0)parts.push('tetto 9h');x+='<div class="day__note">−'+fmtHM(wI.deducted)+' · '+parts.join(' + ')+'</div>';}
-      if(wI.straord>0)x+='<div class="day__note ok">Straordinario '+fmtHM(wI.straord)+' · va a credito</div>';
+      /* lo straordinario del giorno si puo' abbinare a un debito preciso:
+         senza scelta vale l'ordine automatico (prima i debiti piu' vecchi) */
+      if(wI.straord>0){
+        x+='<div class="phfield"><span class="muted">Recupera</span>'
+          +'<select class="act-sel" style="max-width:none;flex:1" data-k="'+key+'" data-f="recup">'+opzioniRecupero(key,e)+'</select></div>';
+        x+='<div class="day__note ok">Straordinario '+fmtHM(wI.straord)+' · '+(recuperoGiornoHTML(key)||'va a credito')+'</div>';
+      }
       if(wI.mc>0)x+='<div class="day__note ok">Masterclass '+fmtHM(wI.mc)+' · presenza ordinaria '+fmtHM(wI.base)+'</div>';      return x;
     }
     /* riga sotto la barra: Masterclass e straordinario con il tetto delle 9h */
@@ -4272,10 +4316,13 @@ import * as repo from './js/repo.js';
       else if(f==='mch'){ if(el.value==='')delete e.mc; else e.mc=Math.max(0,Math.round(parseFloat(el.value)*60)||0); }
       /* minuti fuori orario autorizzati come straordinario */
       else if(f==='sah'){ if(el.value==='')delete e.straordAut; else e.straordAut=Math.max(0,Math.round(parseFloat(el.value))||0); }
+      /* debito che questo straordinario recupera; vuoto = ordine automatico */
+      else if(f==='recup'){ if(el.value==='')delete e.recup; else e.recup=el.value; }
       else if(f==='studyh'){ e.studyMin=el.value===''?0:Math.round(parseFloat(el.value)*60); }
       else { e[f]=el.value; }
       saveDay(key);
-      if(f==='act'){ renderRegistro(); refreshChip(); }
+      /* l'abbinamento cambia le attribuzioni di tutto il saldo: si ridisegna */
+      if(f==='act'||f==='recup'){ renderRegistro(); refreshChip(); }
       else { recalcWeekLive(el,key,e); }
     }
 
@@ -5127,6 +5174,21 @@ import * as repo from './js/repo.js';
         const body=infoW.filter(([,wi])=>wi.straord>0||wi.credito>0||wi.fuori>0).map(([m,wi])=>[settLab(m), wi.straord?fm(wi.straord):'—', wi.mcCredito?fm(wi.mcCredito):'—', wi.c>0?fm(wi.c):'—', wi.fuori?fm(wi.fuori):'—']);
         if(body.length) testo('Totale a credito nel periodo: '+fm(somma(w=>w.credito))+'. Lo straordinario ordinario non e mai pagato: va a credito e si recupera con il riposo compensativo.');
         tabella(['Settimana','Straord. ordinario','Masterclass a credito','Ore ordinarie in piu','Fuori orario non aut.'], body, {columnStyles:{1:{halign:'center'},2:{halign:'center'},3:{halign:'center'},4:{halign:'center'}}});
+        /* dettaglio giorno per giorno con il debito che ogni quota recupera */
+        const A=allocazioniSaldo();
+        const lotG=A.lotti.filter(l=>l.tipo==='credito'&&l.giorno&&l.giorno>=da&&l.giorno<=a&&l.min>0);
+        if(lotG.length){
+          const rec=l=>{
+            const p=l.usi.map(u=>fm(u.min)+' '+etichettaChiave(u.tipo,u.chiave)+(u.scelto?' (indicato)':''));
+            if(l.resto>0)p.push(fm(l.resto)+' ancora a credito');
+            return p.join('\n');
+          };
+          titolo('Straordinario: recupero del debito');
+          testo('Per ogni giornata di straordinario è indicato il debito che va a recuperare. La dicitura «(indicato)» segnala l’abbinamento scelto espressamente; negli altri casi vale l’ordine dal debito più vecchio.');
+          tabella(['Data','Giorno','Ore','Recupera','Note'],
+            lotG.map(l=>[dIt(l.giorno), gLab(l.giorno), fm(l.min), rec(l), (DB.entries[l.giorno]||{}).note||'']),
+            {columnStyles:{0:{cellWidth:24},1:{cellWidth:22},2:{cellWidth:18,halign:'center'},3:{cellWidth:62}}});
+        }
       }      if(has('comp')){
         titolo('Riposo compensativo');
         const gg=giorni.filter(k=>dayComp(DB.entries[k])>0);

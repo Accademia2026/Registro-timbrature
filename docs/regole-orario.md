@@ -90,6 +90,11 @@ ma dentro il tetto delle 45h.
   oltre le prime 20 dell'anno. Un unico saldo, ma ogni quota ricorda la propria
   origine (ordinario o Masterclass) per i moduli e i riepiloghi.
 - Il credito copre un debito esistente oppure finanzia un riposo compensativo.
+  L'abbinamento è automatico e parte dal debito più vecchio, ma nel giorno si
+  può indicare **quale** debito quello straordinario recupera (campo «Recupera»):
+  la scelta viene servita per prima, il resto segue l'ordine automatico. Il
+  prospetto per la segreteria lo stampa giorno per giorno, con la dicitura
+  «(indicato)» sugli abbinamenti scelti a mano.
 - **Riposo compensativo**: sempre collegato a una richiesta autorizzata (dall'app
   o cartacea). Le ore si prendono **dalle più vecchie alle più recenti**, e il
   modulo si compila da solo con quei giorni. Nella settimana del riposo le ore

@@ -93,6 +93,7 @@ export async function loadAll() {
     if (r.studio_min != null) e.studyMin = r.studio_min;
     if (r.masterclass_min != null) e.mc = r.masterclass_min;
     if (r.straord_aut_min != null) e.straordAut = r.straord_aut_min;
+    if (r.recupero) e.recup = r.recupero;
     if (r.nota) e.note = r.nota;
     if (Object.keys(e).length) entries[r.data] = e;
   }
@@ -197,7 +198,7 @@ export function saveGiorno(dateISO, entry, rimosso) {
   debounced('giorno:' + dateISO, async () => {
     const e = entry || {};
     const vuota = !e.act && !e.m1in && !e.m1out && !e.m2in && !e.m2out
-      && e.ph == null && (e.studyMin == null || e.studyMin === 0) && !e.mc && !e.straordAut && !e.note;
+      && e.ph == null && (e.studyMin == null || e.studyMin === 0) && !e.mc && !e.straordAut && !e.recup && !e.note;
     if (vuota && !rimosso) {
       const { error } = await supabase.from('timbrature').delete().eq('data', dateISO);
       if (error) onError('cancellazione giorno', { error });
@@ -212,15 +213,19 @@ export function saveGiorno(dateISO, entry, rimosso) {
       studio_min: e.studyMin ?? null,
       masterclass_min: e.mc ?? null,
       straord_aut_min: e.straordAut ?? null,
+      recupero: orNull(e.recup),
       nota: orNull(e.note),
       rimosso: !!rimosso,
     };
     let { error } = await supabase.from('timbrature').upsert(riga, { onConflict: 'user_id,data' });
-    /* colonna non ancora creata (script 13 non eseguito): si salva il resto */
-    if (error && /straord_aut_min/.test(error.message || '')) {
-      const { straord_aut_min, ...senza } = riga;
+    /* colonne non ancora create (script 13/14 non eseguiti): si salva il resto */
+    if (error && /straord_aut_min|recupero/.test(error.message || '')) {
+      const manca = /recupero/.test(error.message || '') ? 'recupero' : 'straord_aut_min';
+      const { straord_aut_min, recupero, ...senza } = riga;   /* si riprova senza entrambe */
       ({ error } = await supabase.from('timbrature').upsert(senza, { onConflict: 'user_id,data' }));
-      if (!error) onError('salvataggio giorno', { error: { message: 'Per salvare lo straordinario autorizzato serve lo script 13' } });
+      if (!error) onError('salvataggio giorno', { error: { message: manca === 'recupero'
+        ? 'Per abbinare lo straordinario a un debito serve lo script 14'
+        : 'Per salvare lo straordinario autorizzato serve lo script 13' } });
     }
     if (error) onError('salvataggio giorno', { error });
   });
