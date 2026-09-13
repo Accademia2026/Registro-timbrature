@@ -114,6 +114,11 @@ ma dentro il tetto delle 45h.
   La scelta viene servita per prima, il resto segue l'ordine automatico. Il
   prospetto presenze lo stampa giorno per giorno, con la dicitura «(indicato)»
   sugli abbinamenti scelti.
+  Se più giorni della stessa settimana puntano allo stesso debito, le ore si
+  **scalano in ordine di giorno**: il primo ne copre una parte, i successivi il
+  residuo, e l'eccedenza resta a credito. La Comunicazione dell'orario di
+  servizio scrive per ogni giornata quante ore vanno sul debito e quante ne
+  restano da recuperare dopo.
 - **Riposo compensativo**: sempre collegato a una richiesta autorizzata (dall'app
   o cartacea). Le ore si prendono **dalle più vecchie alle più recenti**, e il
   modulo si compila da solo con quei giorni. Nella settimana del riposo le ore

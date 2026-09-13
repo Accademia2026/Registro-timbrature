@@ -3688,6 +3688,23 @@ import * as repo from './js/repo.js';
       if(scelto&&!trovato)opts+='<option value="'+esc(scelto)+'" selected>'+esc(scelto)+' · debito non più presente</option>';
       return opts;
     }
+    /* Piano di recupero di una variazione d'orario: se piu' giorni puntano allo
+       stesso debito, le ore si scalano in ordine di giorno. Il primo copre una
+       parte, i successivi il residuo; l'eccedenza resta a credito. */
+    function pianoRecupero(p){
+      const A=allocazioniSaldo(), resti={}, out={};
+      IDX_.forEach(wd=>{
+        const sl=(p&&p.slots&&p.slots[wd])||{};
+        const xn=nettoSlot({start:sl.sts,end:sl.ste,pausa:sl.stp});
+        if(!xn||!sl.strec)return;
+        const d=A.debiti.find(x=>chiaveDebito(x)===sl.strec); if(!d)return;
+        if(resti[sl.strec]==null)resti[sl.strec]=d.scoperto;
+        const quota=Math.min(xn,resti[sl.strec]);
+        resti[sl.strec]=Math.max(0,resti[sl.strec]-quota);
+        out[wd]={quota, resta:resti[sl.strec], xn, debito:d, eti:etichettaChiave(d.tipo,d.chiave)};
+      });
+      return out;
+    }
     /* menu nell'Orario di lavoro: vale per la fascia, quindi per ogni settimana */
     function opzioniRecuperoOrario(scelto){
       return '<option value="">automatico · prima i debiti più vecchi</option>'
@@ -5673,15 +5690,23 @@ import * as repo from './js/repo.js';
           g.mn?fascia(g.m)+'\n('+fmtHM(g.mn)+')':'—',
           g.tot?fmtHM(g.tot):'—'];
       });
-      /* straordinario programmato: a quale debito va, giorno per giorno */
+      /* Straordinario programmato: a quale debito va, giorno per giorno. Se piu'
+         giorni puntano allo stesso debito, le ore si scalano in ordine: il primo
+         giorno ne copre una parte, i successivi il residuo. */
+      const piano=pianoRecupero(p), recChiuse=[];
       const recRighe=IDX_.map((wd,i)=>{
         const g=v.giorni[wd]; if(!g.xn)return null;
         const cap=SD_[i].charAt(0).toUpperCase()+SD_[i].slice(1);
-        const ch=((p.slots&&p.slots[wd])||{}).strec;
-        const d=ch?allocazioniSaldo().debiti.find(x=>chiaveDebito(x)===ch):null;
-        const dove=d?('a recupero del debito · '+etichettaChiave(d.tipo,d.chiave)+' ('+fmtHM(d.min)+(d.scoperto>0?', ancora da recuperare '+fmtHM(d.scoperto):'')+')')
-          :(ch?('a recupero del debito · '+ch):'a recupero dei debiti orari più vecchi ancora aperti');
-        return '• '+cap+', '+fascia(g.x)+' ('+fmtHM(g.xn)+'): '+dove+'.';
+        const pr=piano[wd];
+        const intestazione='• '+cap+', '+fascia(g.x)+' ('+fmtHM(g.xn)+'): ';
+        if(!pr)return intestazione+'a recupero dei debiti orari più vecchi ancora aperti.';
+        if(pr.quota<=0)return intestazione+'il debito '+pr.eti+' risulta già recuperato: le ore restano a credito.';
+        let t=intestazione+fmtHM(pr.quota)+' a recupero del debito · '+pr.eti+' ('+fmtHM(pr.debito.min)+', da recuperare '+fmtHM(pr.debito.scoperto)+')';
+        t+=pr.resta>0?('; dopo questa giornata restano '+fmtHM(pr.resta)+' da recuperare.')
+          :'; con questa giornata il debito è interamente recuperato.';
+        if(pr.xn>pr.quota)t+=' Le altre '+fmtHM(pr.xn-pr.quota)+' restano a credito.';
+        if(pr.resta===0&&!recChiuse.includes(pr.eti))recChiuse.push(pr.eti);
+        return t;
       }).filter(Boolean);
       const haMC=v.mc>0;
       const decorrenza=p.from?('con decorrenza dalla settimana del '+dataItFull(p.from)):('dall’inizio dell’anno accademico'+(DB.yearLabel?' '+DB.yearLabel:''));
@@ -5726,6 +5751,10 @@ import * as repo from './js/repo.js';
         doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.text('Straordinario a recupero del debito orario', M, y); y+=6;
         doc.setFont('helvetica','normal'); doc.setFontSize(10);
         recRighe.forEach(t=>{const r=doc.splitTextToSize(t, W-2*M); doc.text(r, M, y); y+=r.length*5+1.5;});
+        if(recChiuse.length){
+          const t='Con le ore programmate in questa settimana risulta interamente recuperato il debito di: '+recChiuse.join('; ')+'.';
+          const r=doc.splitTextToSize(t, W-2*M); y+=2; doc.text(r, M, y); y+=r.length*5+1.5;
+        }
       }
       y+=10;
       doc.text('Bari, '+pad(oggi.getDate())+'/'+pad(oggi.getMonth()+1)+'/'+oggi.getFullYear(), M, y);
@@ -5894,6 +5923,11 @@ import * as repo from './js/repo.js';
                 /* a quale debito va: si comunica in anticipo alla segreteria col PDF dell'orario */
                 +'<div class="pills2 recup-row"><span class="hint2">recupera</span>'
                   +'<select class="act-sel recup-sel" data-k="straord" data-pi="'+pi+'" data-rec="'+wd+'">'+opzioniRecuperoOrario(sl.strec||'')+'</select></div>'
+                +(()=>{const pr=pianoRecupero(p)[wd]; if(!pr)return '';
+                  if(pr.quota<=0)return '<div class="hint2">Debito già recuperato: queste ore restano a credito.</div>';
+                  return '<div class="hint2">'+fmtHM(pr.quota)+' sul debito · '+esc(pr.eti)
+                    +(pr.resta>0?' · dopo restano '+fmtHM(pr.resta):' · debito coperto')
+                    +(pr.xn>pr.quota?' · '+fmtHM(pr.xn-pr.quota)+' a credito':'')+'</div>';})()
                 +'<div class="lab2"><i class="kl2 m"></i>Masterclass</div>'
                 +'<div class="pills2">'+tbtn('mc',pi,wd,'s',sl.mcs||'')+'<span class="arr2">→</span>'+tbtn('mc',pi,wd,'e',sl.mce||'')+'</div>'
                 +'<div class="hint2" data-dayhint="'+pi+'-'+wd+'">'+hintGiorno(pi,wd)+'</div>'
