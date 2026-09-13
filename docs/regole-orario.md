@@ -1,0 +1,111 @@
+# Regole di orario, credito e debito
+
+Modello consolidato il 13 settembre 2026 dalle risposte dell'utente. Sostituisce
+le regole precedenti. È la specifica da cui riscrivere il motore di calcolo.
+
+## 1. Monte ore settimanale
+
+| Voce | Ore | Natura |
+|---|---|---|
+| Presenza ordinaria | 24 | dovute ogni settimana, sempre |
+| Studio | 12 | intoccabili, contatore a parte, non si timbrano |
+| Straordinario ordinario | fino a 9 | facoltativo, mai pagato |
+| **Totale massimo** | **45** | limite di legge, non superabile |
+
+La Masterclass sta fuori dal tetto delle 9 ore di straordinario, ma dentro il
+tetto delle 45 ore complessive.
+
+## 2. L'Orario di lavoro dice il tipo, le timbrature dicono la quantità
+
+In Impostazioni → Orario di lavoro si configurano, giorno per giorno, le fasce:
+
+- **presenza ordinaria**
+- **studio** (non si timbra: è un contatore)
+- **straordinario ordinario** (fascia dedicata, da aggiungere)
+- **Masterclass**
+
+Una fascia configurata vale come attività già autorizzata.
+
+### Come si contano le ore di una giornata
+
+1. Ogni tratto timbrato prende il tipo della fascia in cui cade; se cade fuori,
+   il tipo della fascia più vicina.
+2. Per ciascuna fascia si confrontano le **durate**, non gli orari esatti:
+   le ore contate sono quelle timbrate, fino al massimo della durata della fascia.
+   - fascia 9:00–14:00, timbro 9:13–14:13 → 5h00 contate, nessuno scarto
+   - fascia 9:00–14:00, timbro 8:58–14:06 → 5h00 contate, 8 minuti fuori orario
+   - fascia 9:00–14:00, timbro 9:05–13:50 → 4h45 contate, 15 minuti mancanti
+3. Se la fascia prevede una pausa e la pausa non è stata timbrata, la pausa si
+   sottrae dalle ore timbrate di quella fascia.
+4. **Nessuna tolleranza**, né in più né in meno.
+5. Le ore mancanti fanno debito e generano un avviso.
+6. Le ore in più, o timbrate fuori da ogni fascia, non contano: restano
+   registrate, visibili, e segnalate come «da autorizzare». Se le autorizzo
+   diventano straordinario.
+7. Le timbrature restano sempre visibili come sono state fatte.
+
+## 3. Straordinario ordinario
+
+- Pianificato in Orario: già autorizzato, nessun avviso.
+- Non pianificato: avviso «chiedi l'autorizzazione». Autorizzandolo dopo,
+  diventa straordinario a tutti gli effetti.
+- **Non è mai pagato.** Va a credito, e il credito serve a coprire un debito o
+  a prendere un riposo compensativo.
+- Massimo 9 ore a settimana.
+
+## 4. Masterclass
+
+- Si pianifica in Orario (fascia viola).
+- Quota annua: **40 ore per anno accademico**.
+  - le **prime 20 ore** dell'anno sono **pagate a parte**: non entrano nel saldo;
+  - le **successive 20 ore** vanno **a credito**, come lo straordinario ordinario.
+  - il conteggio è automatico e in ordine di data.
+- Oltre le 40 ore: avviso, serve l'autorizzazione della Direzione amministrativa.
+  Le ore restano registrate ma non compensate finché non le autorizzo.
+- **Erosione**: se in una settimana la Masterclass supera le 9 ore, l'eccedenza
+  riduce le ore ordinarie che si possono fare, perché il tetto delle 45 ore non
+  si supera. L'obbligo però resta di 24 ore, quindi le ore ordinarie non fatte
+  **diventano debito da recuperare**.
+  Esempio: 21h ordinarie + 12h studio + 12h Masterclass = 45h, debito 3h.
+- Tutte le ore di Masterclass contano nella quota annua, comprese quelle che
+  hanno eroso l'ordinario.
+
+## 5. Debito, credito, riposo compensativo
+
+- **Debito**: settimana sotto le 24 ore di presenza ordinaria, per ore mancanti,
+  erosione da Masterclass o permesso breve.
+- **Credito**: straordinario ordinario autorizzato, più le ore di Masterclass
+  oltre le prime 20 dell'anno. Un unico saldo, ma ogni quota ricorda la propria
+  origine (ordinario o Masterclass) per i moduli e i riepiloghi.
+- Il credito copre un debito esistente oppure finanzia un riposo compensativo.
+- **Riposo compensativo**: sempre collegato a una richiesta autorizzata (dall'app
+  o cartacea). Le ore si prendono **dalle più vecchie alle più recenti**, e il
+  modulo si compila da solo con quei giorni. Nella settimana del riposo le ore
+  coperte contano come presenza, marcate come riposo compensativo, così la
+  settimana risulta in pari.
+- Il credito **scade il 31 ottobre**, fine dell'anno accademico.
+
+## 6. Permesso breve
+
+Uscita anticipata autorizzata con modulo: le ore non fatte vanno a debito e si
+recuperano in seguito. Modulo ufficiale da acquisire.
+
+## 7. Avvisi che l'app deve dare
+
+- ore mancanti rispetto alle fasce previste;
+- ore timbrate fuori orario o oltre la fascia, da autorizzare;
+- straordinario ordinario oltre le 9 ore settimanali;
+- settimana oltre le 45 ore complessive (limite di legge);
+- Masterclass oltre le 40 ore annue;
+- credito in scadenza al 31 ottobre.
+
+## 8. Cosa sparisce rispetto a prima
+
+- la domanda settimanale «straordinario a credito o pagato»: l'ordinario non è
+  mai pagato, quindi va sempre a credito;
+- la domanda settimanale sulle Masterclass «pagate o a recupero»: decide la
+  quota annua 20 + 20;
+- la domanda sulle Masterclass oltre il tetto delle 9 ore: l'erosione è
+  automatica e il debito nasce da sé.
+
+Restano da decidere solo le autorizzazioni a posteriori delle ore fuori orario.
