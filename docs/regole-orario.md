@@ -21,10 +21,15 @@ In Impostazioni → Orario di lavoro si configurano, giorno per giorno, le fasce
 
 - **presenza ordinaria**
 - **studio** (non si timbra: è un contatore)
-- **straordinario ordinario** (fascia dedicata, da aggiungere)
+- **straordinario ordinario** (fascia dedicata)
 - **Masterclass**
 
 Una fascia configurata vale come attività già autorizzata.
+
+Le 36 ore settimanali sono **24h di presenza + 12h di studio**, e si controllano
+separatamente: la presenza non può superare le 24h. Le ore in più si pianificano
+nella fascia Straordinario (fino a 9h) o Masterclass, che stanno fuori dalle 36h
+ma dentro il tetto delle 45h.
 
 ### Come si contano le ore di una giornata
 

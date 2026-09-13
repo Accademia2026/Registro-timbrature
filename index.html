@@ -5575,8 +5575,11 @@ import * as repo from './js/repo.js';
        vengono tenute ALLINEATE (stesse date di validita', stesso numero di
        periodi): il periodo i-esimo della tabella e' la coppia [pres[i], study[i]].
        Vincoli: fasce non sovrapposte, presenza+studio <= 9h al giorno,
-       totale settimanale = 36h (senza, non si salva). */
+       24h di presenza ordinaria + 12h di studio = 36h settimanali (senza, non
+       si salva). Le ore in piu' si pianificano nella fascia Straordinario o
+       Masterclass del giorno, che stanno fuori dalle 36h. */
     const ORE_SETT=36*60;
+    const ORE_STUDIO=12*60;
     const openPer={pres:null};   /* variazione aperta */
     let openWd=null;             /* giorno aperto dentro la variazione */
     function allineaPeriodi(){
@@ -5635,14 +5638,20 @@ import * as repo from './js/repo.js';
       /* obbligo: 24h di presenza ordinaria + 12h di studio. Le ore di Masterclass
          oltre le 9h di straordinario riducono l ordinario che si puo pianificare. */
       const oltreMC=Math.max(0,mc-CAP_STRA);
+      /* la Masterclass oltre le 9h erode l'ordinario che si puo' pianificare */
+      const presEff=pres+oltreMC;
       const tot=pres+stud+oltreMC, totAll=pres+stud+mc+stra;
-      if(tot<ORE_SETT)errori.push('Mancano '+fmtHM(ORE_SETT-tot)+' alle 36 ore settimanali');
-      if(tot>ORE_SETT)errori.push('Superi le 36 ore di '+fmtHM(tot-ORE_SETT));
+      /* si controllano le due parti separatamente: cosi' l'errore dice dove
+         intervenire invece del generico "superi le 36 ore" */
+      if(presEff>ORE_PRES_ORD)errori.push('Presenza oltre le 24h di '+fmtHM(presEff-ORE_PRES_ORD)+': le ore in più vanno nella fascia Straordinario del giorno, non in Presenza');
+      if(presEff<ORE_PRES_ORD)errori.push('Mancano '+fmtHM(ORE_PRES_ORD-presEff)+' alle 24h di presenza ordinaria');
+      if(stud>ORE_STUDIO)errori.push('Studio oltre le 12h di '+fmtHM(stud-ORE_STUDIO));
+      if(stud<ORE_STUDIO)errori.push('Mancano '+fmtHM(ORE_STUDIO-stud)+' alle 12h di studio');
       if(totAll>ORE_MAX_SETT)errori.push('Superi le 45 ore complessive di '+fmtHM(totAll-ORE_MAX_SETT));
       if(stra>CAP_STRA)errori.push('Straordinario ordinario oltre le 9 ore: '+fmtHM(stra));
-      if(pres<ORE_PRES_ORD&&oltreMC>0)avvisi.push('La Masterclass oltre le 9 ore riduce l ordinario a '+fmtHM(pres)+': le '+fmtHM(ORE_PRES_ORD-pres)+' non fatte restano dovute e diventano debito da recuperare.');
-      if(stra>0)avvisi.push(fmtHM(stra)+' di straordinario ordinario pianificato: gia autorizzato, va a credito.');
-      return {pres,stud,mc,stra,oltre:oltreMC,tot,totAll,errori,avvisi,giorni};
+      if(pres<ORE_PRES_ORD&&oltreMC>0)avvisi.push('La Masterclass oltre le 9 ore riduce l\'ordinario a '+fmtHM(pres)+': le '+fmtHM(ORE_PRES_ORD-pres)+' non fatte restano dovute e diventano debito da recuperare.');
+      if(stra>0)avvisi.push(fmtHM(stra)+' di straordinario ordinario pianificato: già autorizzato, va a credito.');
+      return {pres,stud,mc,stra,oltre:oltreMC,presEff,tot,totAll,errori,avvisi,giorni};
     }    function riassuntoGiorno(pi,wd){
       const g=giornoInfo(pi,wd);
       /* solo le fasce presenti: niente righe di riempimento */
@@ -5668,9 +5677,9 @@ import * as repo from './js/repo.js';
     }
     function piedeHTML(pi){
       const v=verificaPeriodo(pi);
-      return '<span><i class="kl2 p"></i>Presenza <b class="mono">'+fmtHM(v.pres)+'</b></span>'
-        +'<span><i class="kl2 s"></i>Studio <b class="mono">'+fmtHM(v.stud)+'</b></span>'
-        +(v.stra?'<span><i class="kl2 x"></i>Straordinario <b class="mono">'+fmtHM(v.stra)+'</b></span>':'')
+      return '<span><i class="kl2 p"></i>Presenza <b class="mono'+(v.presEff!==ORE_PRES_ORD?' neg':'')+'">'+fmtHM(v.pres)+'</b> <small class="muted">/ 24h</small></span>'
+        +'<span><i class="kl2 s"></i>Studio <b class="mono'+(v.stud!==ORE_STUDIO?' neg':'')+'">'+fmtHM(v.stud)+'</b> <small class="muted">/ 12h</small></span>'
+        +(v.stra?'<span><i class="kl2 x"></i>Straordinario <b class="mono'+(v.stra>CAP_STRA?' neg':'')+'">'+fmtHM(v.stra)+'</b> <small class="muted">/ 9h</small></span>':'')
         +(v.mc?'<span><i class="kl2 m"></i>Masterclass <b class="mono">'+fmtHM(v.mc)+'</b>'+(v.oltre?' <small class="neg">+'+fmtHM(v.oltre)+' oltre il tetto</small>':'')+'</span>':'')
         +'<span class="big2 mono'+(v.tot===ORE_SETT?'':' neg')+'">'+fmtHM(v.tot)+' / 36h'+(v.mc?' <small class="'+(v.totAll>ORE_MAX_SETT?'neg':'muted')+'">· '+fmtHM(v.totAll)+' in tutto</small>':'')+'</span>'
         +(v.errori.length?'<div class="warn2">'+v.errori.map(esc).join('<br>')+'</div>':'')
@@ -5705,7 +5714,7 @@ import * as repo from './js/repo.js';
                 +'<div class="lab2"><i class="kl2 s"></i>Studio</div>'
                 +'<div class="pills2">'+tbtn('study',pi,wd,'s',ss.start||'')+'<span class="arr2">→</span>'+tbtn('study',pi,wd,'e',ss.end||'')
                   +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="study" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(ss.pausa||'')+'" placeholder="0"></div>'
-                +'<div class="lab2"><i class="kl2 x"></i>Straordinario <span class="hint2">gia autorizzato</span></div>'
+                +'<div class="lab2"><i class="kl2 x"></i>Straordinario <span class="hint2">già autorizzato</span></div>'
                 +'<div class="pills2">'+tbtn('straord',pi,wd,'s',sl.sts||'')+'<span class="arr2">→</span>'+tbtn('straord',pi,wd,'e',sl.ste||'')
                   +'<span class="hint2">pausa</span><input class="schpzin" type="number" min="0" step="5" data-k="straord" data-pi="'+pi+'" data-bp="'+wd+'" value="'+(sl.stp||'')+'" placeholder="0"></div>'
                 +'<div class="lab2"><i class="kl2 m"></i>Masterclass</div>'
