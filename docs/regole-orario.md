@@ -47,13 +47,20 @@ ma dentro il tetto delle 45h.
 
 ### Come si contano le ore di una giornata
 
-1. Ogni tratto timbrato prende il tipo della fascia in cui cade; se cade fuori,
-   il tipo della fascia più vicina.
-2. Per ciascuna fascia si confrontano le **durate**, non gli orari esatti:
-   le ore contate sono quelle timbrate, fino al massimo della durata della fascia.
+1. Si guarda **quali fasce sono state toccate** dalle timbrature (il confine fra
+   una fascia e l'altra sta a metà strada). Le fasce in cui non si è timbrato
+   affatto restano fuori: chi viene solo per la Masterclass del pomeriggio non
+   riempie l'ordinario del mattino, che risulta mancante.
+2. Le ore timbrate **riempiono le fasce toccate nell'ordine in cui stanno in
+   orario**, ciascuna fino alla propria durata. Si confrontano le **durate**,
+   non gli orari esatti: entrare in ritardo fa slittare tutto, e lo
+   straordinario scatta solo quando l'ordinario è completo.
    - fascia 9:00–14:00, timbro 9:13–14:13 → 5h00 contate, nessuno scarto
    - fascia 9:00–14:00, timbro 8:58–14:06 → 5h00 contate, 8 minuti fuori orario
    - fascia 9:00–14:00, timbro 9:05–13:50 → 4h45 contate, 15 minuti mancanti
+   - ordinario 8:00–12:00 + straordinario 12:00–14:00, timbro 8:10–14:05 →
+     4h00 di ordinario e 1h55 di straordinario: niente mancante, niente fuori
+     orario
 3. Se la fascia prevede una pausa e la pausa non è stata timbrata, la pausa si
    sottrae dalle ore timbrate di quella fascia, ma solo per la parte che supera
    le **7h12 di lavoro effettivo**, la soglia oltre la quale la pausa scatta per

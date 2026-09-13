@@ -3242,34 +3242,54 @@ import * as repo from './js/repo.js';
       [[t2m(e&&e.m1in),t2m(e&&e.m1out)],[t2m(e&&e.m2in),t2m(e&&e.m2out)]].forEach(([a,b])=>{ if(a!=null&&b!=null&&b>a)out.push([a,b]); });
       return out;
     }
-    /* ripartizione delle ore timbrate del giorno fra le fasce previste */
+    /* Ripartizione delle ore timbrate del giorno fra le fasce previste.
+       Le fasce toccate dalle timbrature si riempiono NELL'ORDINE in cui sono
+       in orario, ciascuna fino alla propria durata: entrare tardi fa slittare
+       tutto, e lo straordinario scatta solo quando l'ordinario e' completo.
+       Esempio: ordinario 8–12, straordinario 12–14, timbro 8:10–14:05 →
+       4h00 di ordinario e 1h55 di straordinario, niente mancante.
+       Le fasce dove non si e' proprio timbrato restano fuori dal giro: chi
+       arriva solo per la Masterclass del pomeriggio non riempie l'ordinario
+       del mattino, che risulta mancante. */
     function giornoCalc(date,e){
       const fasce=fasceGiorno(date), iv=intervalliTimbrati(e);
       const timbrato=iv.reduce((s,[a,b])=>s+(b-a),0);
       const r={timbrato, ord:0, straord:0, mc:0, mancanti:0, ecc:[], fuori:0, pausa:0};
       if(!fasce.length){ if(timbrato>0){ r.ecc.push({tipo:'straord',min:timbrato}); r.fuori=timbrato; } return r; }
+      /* quali fasce sono state toccate: si guarda la regione di ciascuna,
+         con i confini a meta' strada fra una fascia e la successiva */
       const conf=[]; for(let i=0;i<fasce.length-1;i++)conf.push(Math.round((fasce[i].e+fasce[i+1].s)/2));
       fasce.forEach((f,i)=>{
         const ra=i===0?-Infinity:conf[i-1], rb=i===fasce.length-1?Infinity:conf[i];
         let att=0, pezzi=0;
         iv.forEach(([a,b])=>{ const q=Math.min(b,rb)-Math.max(a,ra); if(q>0){att+=q;pezzi++;} });
-        /* Pausa prevista e non timbrata: si toglie dalle ore di quella fascia,
-           ma solo per la parte che supera le 7h12 di lavoro effettivo, cioe'
-           la soglia oltre la quale la pausa scatta per legge. Chi timbra 7h
-           non deve nessuna pausa, e le ore di riposo compensativo aggiunte
-           dopo non fanno scattare nulla: non sono lavoro. */
-        if(f.pausa&&pezzi<2){
-          const dovuta=Math.min(f.pausa, Math.max(0, att-AUTO_BREAK_THRESHOLD));
-          att=Math.max(0,att-dovuta); r.pausa+=dovuta;
-        }
-        f.att=att; f.contato=Math.min(att,f.net); f.ecc=att-f.contato;
+        f.att=att; f.pezzi=pezzi; f.contato=0;
       });
+      const toccate=fasce.filter(f=>f.att>0);
+      /* Pausa prevista e non timbrata: si toglie dal monte ore della giornata,
+         ma solo per la parte che supera le 7h12 di lavoro effettivo, cioe' la
+         soglia oltre la quale la pausa scatta per legge. Chi timbra 7h non deve
+         nessuna pausa, e il riposo compensativo non la fa scattare: non e' lavoro. */
+      let monte=toccate.reduce((s,f)=>s+f.att,0);
+      const pausaPrevista=toccate.reduce((s,f)=>s+(f.pezzi<2?(+f.pausa||0):0),0);
+      if(pausaPrevista>0){
+        const dovuta=Math.min(pausaPrevista, Math.max(0, monte-AUTO_BREAK_THRESHOLD));
+        monte=Math.max(0,monte-dovuta); r.pausa=dovuta;
+      }
+      /* si riempiono in ordine di orario, ciascuna fino alla propria durata */
+      toccate.forEach(f=>{ f.contato=Math.min(monte,f.net); monte-=f.contato; });
       fasce.forEach(f=>{
         if(f.tipo==='studio')return;            /* lo studio e' un contatore a parte */
-        if(f.tipo==='ord'){ r.ord+=f.contato; r.mancanti+=Math.max(0,f.net-f.att); }
+        if(f.tipo==='ord'){ r.ord+=f.contato; r.mancanti+=Math.max(0,f.net-f.contato); }
         else r[f.tipo]+=f.contato;
-        if(f.ecc>0){ r.ecc.push({tipo:f.tipo==='mc'?'mc':'straord',min:f.ecc}); r.fuori+=f.ecc; }
       });
+      /* quello che avanza e' fuori orario: prende il tipo dell'ultima fascia
+         toccata, come le ore autorizzate a posteriori */
+      if(monte>0){
+        const ultima=toccate[toccate.length-1];
+        const tipo=(ultima&&ultima.tipo==='mc')?'mc':'straord';
+        r.ecc.push({tipo,min:monte}); r.fuori=monte;
+      }
       return r;
     }
     /* ore fuori orario autorizzate a posteriori, giorno per giorno. Le vecchie
