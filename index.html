@@ -3598,13 +3598,22 @@ import * as repo from './js/repo.js';
       const bal0=DB.initialBalanceMin||0;
       if(bal0>0) aggiungiLotto({tipo:'iniziale',chiave:'iniziale',min:bal0,resto:bal0,usi:[]});
       else if(bal0<0){ const d={tipo:'debito',chiave:'iniziale',min:-bal0,coperto:[],scoperto:0}; debiti.push(d); consuma(d); }
-      let bal=bal0;
-      for(const mon of weeksWithData()){
-        const wi=weekCalc(mon,bal); bal=wi.balDopo;
-        for(let i=0;i<7;i++){ const k=iso(addDays(parseISO(mon),i)); if(isSkipped(k))continue; const c=dayComp(DB.entries[k]); if(c>0){ const d={tipo:'riposo',chiave:k,mon,min:c,coperto:[],scoperto:0}; debiti.push(d); consuma(d); } }
+      /* i crediti si registrano GIORNO per giorno: il modulo di riposo
+         compensativo deve indicare la data in cui lo straordinario e' stato
+         prestato, prendendo prima le ore piu' vecchie */
+      for(const {mon,wi} of serieSettimane().lista){
+        const giorni=[];
+        for(let i=0;i<7;i++){ const k=iso(addDays(parseISO(mon),i)); if(isSkipped(k))continue; giorni.push(k); }
+        giorni.forEach(k=>{ const c=dayComp(DB.entries[k]); if(c>0){ const d={tipo:'riposo',chiave:k,mon,min:c,coperto:[],scoperto:0}; debiti.push(d); consuma(d); } });
         if(wi.c<0){ const d={tipo:'debito',chiave:mon,mon,min:-wi.c,coperto:[],scoperto:0}; debiti.push(d); consuma(d); }
-        if(wi.credito>0) aggiungiLotto({tipo:"credito",chiave:mon,mon,min:wi.credito,resto:wi.credito,usi:[]});
-        if(wi.mcCredito>0) aggiungiLotto({tipo:"creditoMC",chiave:mon,mon,min:wi.mcCredito,resto:wi.mcCredito,usi:[]});
+        /* ore ordinarie in piu' rispetto all'obbligo: credito della settimana */
+        if(wi.c>0) aggiungiLotto({tipo:'credito',chiave:mon,mon,min:wi.c,resto:wi.c,usi:[],giorno:null});
+        /* straordinario ordinario, giorno per giorno */
+        giorni.forEach(k=>{ const en=DB.entries[k]; if(!en||!en.act)return; const s=dayWorkInfo(k,en).straord; if(s>0)aggiungiLotto({tipo:'credito',chiave:mon,mon,min:s,resto:s,usi:[],giorno:k}); });
+        /* Masterclass a credito: si ripartisce sui giorni con Masterclass, in ordine di data */
+        let restoMC=wi.mcCredito;
+        if(restoMC>0)giorni.forEach(k=>{ if(restoMC<=0)return; const en=DB.entries[k]; if(!en||!en.act)return; const m=dayWorkInfo(k,en).mc; if(m<=0)return; const q=Math.min(m,restoMC); restoMC-=q; aggiungiLotto({tipo:'creditoMC',chiave:mon,mon,min:q,resto:q,usi:[],giorno:k}); });
+        if(restoMC>0) aggiungiLotto({tipo:'creditoMC',chiave:mon,mon,min:restoMC,resto:restoMC,usi:[],giorno:null});
       }
       return {lotti,debiti,disponibili:lotti.filter(l=>l.resto>0)};
     }
@@ -3615,12 +3624,16 @@ import * as repo from './js/repo.js';
       let corpo='', titolo='';
       if(m.tipo==='credito'||m.tipo==='mcCredito'){
         const tl=m.tipo==='credito'?'credito':'creditoMC';
-        const l=A.lotti.find(x=>x.tipo===tl&&x.chiave===m.mon);
+        const ls=A.lotti.filter(x=>x.tipo===tl&&x.chiave===m.mon);
         titolo=(m.tipo==='credito'?'Credito · ':'Credito Masterclass · ')+rangeSettimana(m.mon);
         corpo=riga('Ore a credito',fmtHM(m.min));
-        if(l){
-          corpo+=(l.usi.length?'<div class="subh" style="margin:10px 0 2px">Usato per</div>'+l.usi.map(u=>riga(etichettaChiave(u.tipo,u.chiave)+(u.tipo==='riposo'?' (riposo)':' (debito)'),fmtHM(u.min))).join(''):'')
-            +riga('Ancora disponibile',fmtHM(l.resto));
+        if(ls.length){
+          const giorni=ls.filter(x=>x.giorno);
+          if(giorni.length)corpo+='<div class="subh" style="margin:10px 0 2px">Maturato</div>'+giorni.map(x=>riga(dataItFull(x.giorno),fmtHM(x.min))).join('');
+          const usi={}; ls.forEach(x=>x.usi.forEach(u=>{const k=u.tipo+'|'+u.chiave; usi[k]=(usi[k]||0)+u.min;}));
+          const vu=Object.entries(usi);
+          if(vu.length)corpo+='<div class="subh" style="margin:10px 0 2px">Usato per</div>'+vu.map(([k,min])=>{const [tp,ch]=k.split('|'); return riga(etichettaChiave(tp,ch)+(tp==='riposo'?' (riposo)':' (debito)'),fmtHM(min));}).join('');
+          corpo+=riga('Ancora disponibile',fmtHM(ls.reduce((s,x)=>s+x.resto,0)));
         }
       } else {
         const lista=A.debiti.filter(d=>m.tipo==='riposo'?(d.tipo==='riposo'&&d.mon===m.mon):(d.tipo==='debito'&&d.chiave===m.mon));
@@ -3654,7 +3667,7 @@ import * as repo from './js/repo.js';
       const LAB={credito:"Credito",mcCredito:"Credito MC",debito:"Debito",riposo:"Riposo comp."};
       const CLS={credito:"pos",mcCredito:"mc",debito:"neg",riposo:"rip"};
       const A=allocazioniSaldo();
-      const restoDi=m=>{ const t=m.tipo==='credito'?'credito':(m.tipo==='mcCredito'?'creditoMC':null); if(!t)return ''; const l=A.lotti.find(x=>x.tipo===t&&x.chiave===m.mon); return l?(l.resto>0?' · disp. '+fmtHM(l.resto):' · usato'):''; };
+      const restoDi=m=>{ const t=m.tipo==='credito'?'credito':(m.tipo==='mcCredito'?'creditoMC':null); if(!t)return ''; const ls=A.lotti.filter(x=>x.tipo===t&&x.chiave===m.mon); if(!ls.length)return ''; const r=ls.reduce((s,x)=>s+x.resto,0); return r>0?' · disp. '+fmtHM(r):' · usato'; };
       const righe=lista.length?lista.map(m=>'<div class="row mov-row" data-mov="'+m.tipo+'|'+m.mon+'">'
           +'<span class="mov-k">'+rangeSettimana(m.mon)+'<small>saldo '+fmtHM(m.bal,true)+esc(restoDi(m))+'</small></span>'
           +'<span class="wtag wtag--'+CLS[m.tipo]+'">'+LAB[m.tipo]+'</span>'
@@ -5322,17 +5335,8 @@ import * as repo from './js/repo.js';
       const disp=A.disponibili.filter(l=>l.tipo==="credito"||l.tipo==="creditoMC");
       const totDisp=A.disponibili.reduce((s,l)=>s+l.resto,0);
       const rigaOre=(i,data,ore)=>'<div class="mrow"><div class="mfield"><label>'+(i===0?'Data straordinario':'&nbsp;')+'</label><input type="date" data-rsData="'+i+'" value="'+(data||'')+'"></div><div class="mfield" style="flex:.6"><label>'+(i===0?'Ore effettuate':'&nbsp;')+'</label><input type="text" data-rsOre="'+i+'" value="'+(ore||'')+'" placeholder="es. 2h"></div></div>';
-      /* il modulo indica il giorno in cui il credito e' stato maturato */
-      const giornoCredito=(mon,tipo)=>{
-        for(let i=0;i<7;i++){
-          const k=iso(addDays(parseISO(mon),i)); if(isSkipped(k))continue;
-          const en=DB.entries[k]; if(!en||!en.act)continue;
-          const w=dayWorkInfo(k,en);
-          if(tipo==='creditoMC'?w.mc>0:(w.straord>0||w.base>expectedFor(k)))return k;
-        }
-        return iso(addDays(parseISO(mon),3));
-      };
-      const righe=[0,1,2,3].map(i=>{const l=disp[i]; return rigaOre(i, l?giornoCredito(l.chiave,l.tipo):'', l?fmtHM(l.resto):'');}).join('');
+      /* il modulo indica il giorno in cui lo straordinario e' stato prestato */
+      const righe=[0,1,2,3].map(i=>{const l=disp[i]; return rigaOre(i, l?(l.giorno||iso(addDays(parseISO(l.chiave),3))):'', l?fmtHM(l.resto):'');}).join('');
       modalBg.innerHTML='<div class="modal"><h3>Richiesta riposo compensativo</h3><div class="mbody">'
         +'<p class="hint" style="margin:0">Crediti ancora disponibili: <b>'+fmtHM(totDisp)+'</b>'+(disp.length?' · proposti dal più vecchio, con le ore non ancora usate; correggi date e ore come servono.':'. Nessuna settimana con credito disponibile: compila a mano.')+'</p>'
         +'<div class="mfield"><label>Nome e cognome</label><input type="text" id="rsNome" value="'+esc(nome)+'"></div>'
