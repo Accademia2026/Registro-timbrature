@@ -458,6 +458,11 @@
   .ios .phfield{display:flex;align-items:center;gap:8px;font-size:var(--t-sub)}
   /* riga "Recupera": il menu si restringe con lo schermo invece di allargare la scheda */
   .ios .recup-row{flex-wrap:wrap}
+  /* ricerca attivita' */
+  .cerca-box{margin:0 0 8px}
+  .cerca-box input{width:100%;box-sizing:border-box}
+  .cerca-out{margin:0 0 12px;border-radius:12px;overflow:hidden;background:var(--panel)}
+  .cerca-out .row{gap:8px}
   /* domanda secca con Si'/No sulla stessa riga */
   .sum-ask,.fuori-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .sum-ask .wtag,.fuori-row .wtag{cursor:pointer}
@@ -4131,11 +4136,13 @@ import * as repo from './js/repo.js';
       if(!e.act)return '<span class="muted">—</span>';
       const expected=expectedFor(key);
       const beh=ACTBY[e.act]?.beh;
-      const showSu=(beh==='work'||beh==='hour'||beh==='special')&&expected>0;
-      return fmtHM(dayPrestate(key,e))+(showSu?'<small>su '+fmtHM(dayPrevisto(key)||expected)+'</small>':'');
+      const previsto=dayPrevisto(key)||expected;
+      const showSu=(beh==='work'||beh==='hour'||beh==='special')&&previsto>0;
+      return fmtHM(dayPrestate(key,e))+(showSu?'<small>su '+fmtHM(previsto)+'</small>':'');
     }
     function editorGiorno(key,e){
-      const beh=ACTBY[e.act]?.beh, expected=expectedFor(key);
+      /* giorno attivo = ha una fascia qualsiasi: ordinario, straordinario o Masterclass */
+      const beh=ACTBY[e.act]?.beh, expected=dayPrevisto(key);
       const showTimes=beh==='work'||beh==='hour'||beh==='special'||(!e.act&&expected>0);
       const isComp=!!ACTBY[e.act]?.comp, showPh=beh==='hour'||isComp;
       const sp1=(t2m(e.m1in)!=null&&t2m(e.m1out)!=null)?Math.max(0,t2m(e.m1out)-t2m(e.m1in)):null;
@@ -4225,7 +4232,9 @@ import * as repo from './js/repo.js';
       let days='';
       for(let i=0;i<6;i++){ /* lun-sab: la domenica non si mostra */
         const dd=addDays(mon,i), key=iso(dd), e=DB.entries[key]||{};
-        const expected=expectedFor(key);
+        /* riposo solo se l'orario non prevede NIENTE quel giorno: un giorno con
+           la sola fascia di straordinario o di Masterclass e' un giorno attivo */
+        const expected=dayPrevisto(key);
         const skipped=isSkipped(key);
         const naturalRest = expected===0;
         const isToday = key===todayISO;
@@ -4257,7 +4266,7 @@ import * as repo from './js/repo.js';
       /* niente piu' domande settimanali: lo straordinario pianificato in orario
          e' gia' autorizzato, le ore fuori orario si autorizzano nel giorno */
       const authBar='';
-      const wkDays=[]; for(let i=0;i<7;i++){const dd=addDays(mon,i);if(expectedFor(iso(dd))>0)wkDays.push(iso(dd));}
+      const wkDays=[]; for(let i=0;i<7;i++){const dd=addDays(mon,i);if(dayPrevisto(iso(dd))>0)wkDays.push(iso(dd));}
       const allSkipped = wkDays.length>0 && wkDays.every(k=>isSkipped(k));
       const weekActions = '<div class="linkrow" style="margin:0 16px">'+( allSkipped
           ? '<span class="muted">Settimana rimossa.</span><button class="ilink" id="waRestore">Ripristina settimana</button>'
@@ -4356,7 +4365,7 @@ import * as repo from './js/repo.js';
         if(!confirm('Rimuovere l\'intera settimana come giornate lavorative? Gli orari inseriti verranno cancellati e la settimana non peserà sull\'obbligo.'))return;
         /* anche i giorni di riposo con qualcosa dentro (straordinario, permessi):
            la settimana va svuotata tutta, altrimenti resta nel conteggio */
-        for(let i=0;i<7;i++){const dd=addDays(mon,i),k=iso(dd); if(expectedFor(k)>0||hasEntry(DB.entries[k])){DB.skipDays[k]=true;delete DB.entries[k];saveDay(k);}}
+        for(let i=0;i<7;i++){const dd=addDays(mon,i),k=iso(dd); if(dayPrevisto(k)>0||hasEntry(DB.entries[k])){DB.skipDays[k]=true;delete DB.entries[k];saveDay(k);}}
         delete DB.authorized[weekCursor]; saveAuth(weekCursor); refreshChip(); renderRegistro();
       };
       const waRestore=document.getElementById('waRestore'); if(waRestore)waRestore.onclick=()=>{
@@ -4575,6 +4584,27 @@ import * as repo from './js/repo.js';
       return ev.date===dISO;
     }
     function dayEventsFor(dISO){return DB.events.filter(ev=>eventOccursOn(ev,dISO));}
+    /* ricerca nelle attivita': nome o descrizione, nota, docente collegato */
+    let attCerca='';
+    function cercaAttivita(q){
+      const s=(q||'').trim().toLowerCase(); if(!s)return [];
+      const testo=ev=>{const p=personById(ev.personId); const doc=p&&p.teacherId&&personById(p.teacherId);
+        return [evName(ev),ev.title,ev.note,doc&&doc.name].filter(Boolean).join(' ').toLowerCase();};
+      return DB.events.filter(ev=>testo(ev).includes(s))
+        .sort((a,b)=>b.date.localeCompare(a.date)||(a.start||'').localeCompare(b.start||''))
+        .slice(0,40);
+    }
+    function risultatiCercaHTML(){
+      if(!attCerca.trim())return '';
+      const hit=cercaAttivita(attCerca);
+      if(!hit.length)return '<div class="cerca-out"><div class="row"><span class="row__label muted">Nessuna attività trovata.</span></div></div>';
+      const dIt=x=>{const q=parseISO(x);return pad(q.getDate())+'/'+pad(q.getMonth()+1);};
+      return '<div class="cerca-out">'+hit.map(ev=>{const d=parseISO(ev.date);
+        const quando=ev.mode==='weekly'?'ogni '+DAYNAMES[(d.getDay()+6)%7].slice(0,3)+' dal '+dIt(ev.date):DAYNAMES[(d.getDay()+6)%7].slice(0,3)+' '+dIt(ev.date);
+        return '<div class="row row--tap" data-cerca-ev="'+ev.id+'"><span class="oggi-dot" style="background:'+evColor(ev)+'"></span>'
+          +'<span class="row__label">'+esc(evName(ev))+(ev.note?'<small class="muted"> · '+esc(ev.note)+'</small>':'')+'</span>'
+          +'<span class="row__value"><small class="muted">'+quando+' · '+ev.start+'</small></span></div>';}).join('')+'</div>';
+    }
     function eventOccurrences(ev,fromISO,toISO){
       if(ev.mode!=='weekly')return (ev.date>=fromISO&&ev.date<=toISO)?[ev.date]:[];
       const res=[];let d=parseISO(ev.date);const to=parseISO(toISO);const until=ev.until?parseISO(ev.until):null;
@@ -4648,12 +4678,21 @@ import * as repo from './js/repo.js';
           +'</div>'
         +'</div>'
         +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc(evName(appunti.ev))+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
+        +'<div class="cerca-box"><input type="search" id="attCerca" class="note" placeholder="Cerca un’attività…" value="'+esc(attCerca)+'" autocomplete="off"></div>'
+        +'<div id="cercaOut">'+risultatiCercaHTML()+'</div>'
         +'<p class="diary-intro"><span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot stra"></span> straordinario · <span class="lg-dot mc"></span> Masterclass <button class="linkbtn" id="btnIcs" style="padding:2px 6px;margin-left:8px">⤓ Esporta calendario</button></p>'
         +'<p class="sec-d">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana.</p>'
         +'<div class="cal-wrap"><div class="cal"><div class="cal-head">'+head+'</div><div class="cal-body">'+gutter+cols+'</div></div></div>';
     }
     function wireCalendar(){
       const mon=parseISO(diaryCursor);
+      /* ricerca: i risultati si aggiornano mentre si scrive, senza ridisegnare il calendario */
+      const inp=document.getElementById('attCerca'), out=document.getElementById('cercaOut');
+      const wireHits=()=>out.querySelectorAll('[data-cerca-ev]').forEach(r=>r.onclick=()=>{
+        const ev=DB.events.find(x=>x.id===r.dataset.cercaEv); if(!ev)return;
+        diaryCursor=iso(mondayOf(parseISO(ev.date))); renderAttivita(); schedaEvento(ev);
+      });
+      if(inp){ inp.addEventListener('input',()=>{attCerca=inp.value; out.innerHTML=risultatiCercaHTML(); wireHits();}); wireHits(); }
       document.getElementById('cPrev').onclick=()=>{diaryCursor=iso(addDays(mon,-7));renderAttivita();};
       document.getElementById('cNext').onclick=()=>{diaryCursor=iso(addDays(mon,7));renderAttivita();};
       document.getElementById('cToday').onclick=()=>{diaryCursor=iso(mondayOf(new Date()));renderAttivita();};
