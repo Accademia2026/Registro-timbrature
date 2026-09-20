@@ -472,6 +472,19 @@
   .ios .phfield{display:flex;align-items:center;gap:8px;font-size:var(--t-sub)}
   /* riga "Recupera": il menu si restringe con lo schermo invece di allargare la scheda */
   .ios .recup-row{flex-wrap:wrap}
+  /* Riepilogo a piastrelle */
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 var(--gutter,16px)}
+  @media(min-width:700px){.tiles{grid-template-columns:repeat(3,1fr)}}
+  .tile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:104px;padding:14px 14px 12px;border:1px solid var(--line);
+    border-radius:var(--r-card,16px);background:var(--card,var(--panel));color:var(--ink);font:inherit;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .tile:active{transform:scale(.98)}
+  .tile svg{width:24px;height:24px;color:var(--teal,var(--accent));margin-bottom:4px}
+  .tile__k{font-size:12.5px;color:var(--muted);font-weight:600}
+  .tile__v{font-size:22px;font-weight:700;letter-spacing:-.4px;line-height:1.1}
+  .tile__v small{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:0}
+  .tile__v.neg{color:var(--neg,#c0392b)} .tile__v.pos{color:var(--pos,var(--teal))}
+  .tile.is-on{border-color:var(--teal,var(--accent));box-shadow:inset 0 0 0 1px var(--teal,var(--accent))}
+  #tilePanel{display:flex;flex-direction:column;gap:10px;scroll-margin-top:70px}
   /* ricerca attivita' */
   .cerca-box{margin:0 0 8px}
   .cerca-box input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:10px 14px;border-radius:12px;
@@ -3973,6 +3986,63 @@ import * as repo from './js/repo.js';
         +'</div></div></div>';
     }
     const dataItBreve=k=>{const d=parseISO(k);return d.getDate()+'/'+pad(d.getMonth()+1);};
+    /* ==================================================================
+       Riepilogo a piastrelle: sei pulsantoni con il numero gia' in vista;
+       un tocco apre sotto il pannello con il dettaglio di quella voce. */
+    let riepTile=null;
+    try{ riepTile=localStorage.getItem('ctm:riep-tile')||null; }catch(_){}
+    const TILE_ICO={
+      saldo:'<path d="M5 8h6M8 5v6M13 17h6M17 5L7 19"></path>',
+      sist:'<path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.5"></path>',
+      assenze:'<circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"></path>',
+      mc:'<path d="M9 18V5l10-2v13"></path><circle cx="6.5" cy="18" r="2.5"></circle><circle cx="16.5" cy="16" r="2.5"></circle>',
+      credito:'<path d="M3 17l6-6 4 4 8-8M15 7h6v6"></path>',
+      settimane:'<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path>',
+    };
+    function riepTilesHTML(c){
+      const somma=f=>c.wks.reduce((a,m)=>a+f(weekInfo(m)),0);
+      const p=problemiDati();
+      const nSist=p.vuote.length+p.fuori.length+p.mancanti.length+p.mcMano.length+p.tipiVecchi.length;
+      const mcTot=somma(w=>w.mc), cred=somma(w=>w.credito), fuori=somma(w=>w.fuori);
+      const tile=(id,lab,val,cls)=>'<button class="tile'+(riepTile===id?' is-on':'')+'" data-tile="'+id+'">'
+        +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+TILE_ICO[id]+'</svg>'
+        +'<span class="tile__k">'+lab+'</span><span class="tile__v num '+(cls||'')+'">'+val+'</span></button>';
+      const rg=(dett,lab,val,cls)=>'<div class="row row--tap" data-dett="'+dett+'"><span class="row__label">'+lab+'</span><span class="row__value '+(cls||'')+'">'+val+'</span></div>';
+      const rs=(lab,val,cls)=>'<div class="row"><span class="row__label">'+lab+'</span><span class="row__value '+(cls||'')+'">'+val+'</span></div>';
+      const pannello={
+        saldo:()=>'<div class="group">'+rg('saldo','Settimana per settimana',fmtHM(c.bal,true),c.bal<0?'neg':'pos')+'</div>'
+          +'<div id="saldoBox">'+saldoHTML()+'</div>',
+        sist:()=>daSistemareHTML(),
+        assenze:()=>'<div class="group">'
+          +rg('ferie','Ferie residue',c.ferieRes+' <small class="muted">su '+c.ferieTot+' gg</small>')
+          +rg('malattia','Malattia',c.malattia+' <small class="muted">gg</small>')
+          +rg('omessa','Omesse timbrature',omessaCount(),omessaCount()?'neg':'')+'</div>',
+        mc:()=>'<div class="group">'
+          +rg('mc','Masterclass',fmtHM(mcTot)+' <small class="muted">su 40h</small>')
+          +rg('pagato','Pagate <small class="muted">prime 20h</small>',fmtHM(somma(w=>w.mcPagate)))
+          +rs('A credito <small class="muted">oltre le 20h</small>',fmtHM(somma(w=>w.mcCredito)),'pos')+'</div>',
+        credito:()=>'<div class="group">'
+          +rg('credito','Straordinario a credito',fmtHM(cred),'pos')
+          +rg('comp','Riposo compensativo <small class="muted">dal saldo</small>',fmtHM(c.wks.reduce((a,m)=>a+weekComp(m),0)))
+          +rg('fuori','Fuori orario <small class="muted">da decidere</small>',fmtHM(fuori),fuori?'neg':'')
+          +rg('noaut','In più, non autorizzati <small class="muted">promemoria</small>',fmtHM(somma(w=>w.fuoriNoAut)))+'</div>',
+        settimane:()=>'<div class="group">'+c.settimane+'</div>'
+          +'<div class="group" style="margin-top:10px">'+rg('settimane','Sopra o sotto le ore',c.wks.length)
+          +(c.vuote.length?rg('vuote','Senza timbrature <small class="muted">fuori dal saldo</small>',c.vuote.length,'neg'):'')+'</div>',
+      };
+      const oggi=dayEventsFor(c.tkey).length
+        ? '<div><div class="group-header">Attività di oggi</div><div class="group">'+oggiHTML(c.tkey,c.now)+'</div></div>' : '';
+      return oggi
+        +'<div class="tiles">'
+          +tile('saldo','Saldo ore',fmtHM(c.bal,true),c.bal<0?'neg':'pos')
+          +tile('sist','Da sistemare',nSist,nSist?'neg':'pos')
+          +tile('assenze','Ferie residue',c.ferieRes+' gg')
+          +tile('mc','Masterclass',fmtHM(mcTot)+'<small> / 40h</small>')
+          +tile('credito','Credito',fmtHM(cred,true),'pos')
+          +tile('settimane','Settimane',c.wks.length)
+        +'</div>'
+        +(riepTile&&pannello[riepTile]?'<div id="tilePanel">'+pannello[riepTile]()+'</div>':'');
+    }
     function renderRiepilogo(){
       azzeraCalcoli();
       const bal=runningBalance();
@@ -4012,26 +4082,7 @@ import * as repo from './js/repo.js';
               +'<button class="btn btn--filled btn--pill" id="btnTimbra" '+(slot?'':'disabled')+'>'+(slot?('Timbra '+slot.l.toLowerCase()):'Giornata completa')+'</button>'
             +'</div>'
           +'</div></div>'
-          +'<div><div class="group-header">Attività di oggi</div><div class="group">'+oggiHTML(tkey,now)+'</div></div>'
-          +'<div><div class="group-header">Andamento</div><div class="group">'
-            +'<div class="row row--tap gh-tap'+(riepAperti.andamento?' row--open':'')+'" data-sez="andamento"><span class="row__label">Saldo ore complessivo</span><span class="row__value"><b class="'+(bal<0?'neg':'pos')+'">'+fmtHM(bal,true)+'</b> <small class="muted">· '+wks.length+' settimane</small></span></div>'
-          +'<div class="gh-body"'+(riepAperti.andamento?'':' hidden')+'>'
-            +'<div class="row row--tap" data-dett="settimane"><span class="row__label">Settimane registrate</span><span class="row__value">'+wks.length+(wks.length?' <small class="muted">\u00b7 '+over+' con straordinario \u00b7 '+under+' sotto</small>':'')+'</span></div>'
-            +(vuote.length?'<div class="row row--tap" data-dett="vuote"><span class="row__label">Settimane senza timbrature</span><span class="row__value neg">'+vuote.length+' <small class="muted">fuori dal saldo</small></span></div>':'')
-            +'<div class="row row--tap" data-dett="credito"><span class="row__label">Straordinario a credito</span><span class="row__value pos">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).credito,0))+'</span></div>'
-            +'<div class="row row--tap" data-dett="mc"><span class="row__label">Masterclass</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).mc,0))+' <small class="muted">su 40h</small></span></div>'
-            +'<div class="row row--tap" data-dett="pagato"><span class="row__label">Masterclass pagate <small class="muted">prime 20h</small></span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).mcPagate,0))+'</span></div>'
-            +'<div class="row row--tap" data-dett="comp"><span class="row__label">Riposo compensativo <small class="muted">dal saldo</small></span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekComp(m),0))+'</span></div>'
-            +'<div class="row row--tap" data-dett="fuori"><span class="row__label">Fuori orario</span><span class="row__value '+(wks.reduce((a,m)=>a+weekInfo(m).fuori,0)?'neg':'')+'">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).fuori,0))+' <small class="muted">da decidere</small></span></div>'
-            +'<div class="row row--tap" data-dett="noaut"><span class="row__label">In più, non autorizzati</span><span class="row__value">'+fmtHM(wks.reduce((a,m)=>a+weekInfo(m).fuoriNoAut,0))+' <small class="muted">promemoria</small></span></div>'            +'<div class="row row--tap" data-dett="ferie"><span class="row__label">Ferie residue</span><span class="row__value">'+ferieRes+' <small class="muted">su '+ferieTot+' gg</small></span></div>'
-            +'<div class="row row--tap" data-dett="malattia"><span class="row__label">Malattia</span><span class="row__value">'+malattia+' <small class="muted">gg</small></span></div>'
-            +'<div class="row row--tap" data-dett="omessa"><span class="row__label">Omesse timbrature</span><span class="row__value '+(omessaCount()?'neg':'')+'">'+omessaCount()+'</span></div>'
-            +'<p class="group-note" style="margin:8px 16px 10px">Obbligo di '+fmtHM(obl)+' a settimana in presenza. Il saldo conta presenza ordinaria e straordinario a credito; il riposo compensativo lo scala. Masterclass, straordinario pagato e studio restano a parte. Le settimane senza nessuna timbratura non entrano nel saldo: vanno compilate o rimosse.</p>'
-          +'</div></div></div>'
-          +'<div id="saldoBox">'+saldoHTML()+'</div>'
-          +daSistemareHTML()
-          +'<div><div class="group-header">'+(ultima?'Ultima settimana':'Settimane')+'</div><div class="group">'+settimane+'</div>'
-            +'<p class="group-note">La tacca segna l\u2019obbligo settimanale. La barra gialla dice che manca ancora qualcosa. Le etichette raccontano cosa \u00e8 successo.</p></div>'
+          +riepTilesHTML({bal,wks,vuote,ferieRes,ferieTot,malattia,settimane,tkey,now})
         +'</div>'
         +'</div>';
 
@@ -4072,6 +4123,16 @@ import * as repo from './js/repo.js';
       bindSaldo();
       view.querySelectorAll('[data-openweek]').forEach(b=>b.onclick=()=>{weekCursor=b.dataset.openweek;openDay=null;setView('registro');});
       view.querySelectorAll('[data-openday]').forEach(b=>b.onclick=()=>{const k=b.dataset.openday;weekCursor=monOf(k);openDay=k;setView('registro');});
+      /* piastrelle: un tocco apre il pannello sotto, un secondo tocco lo chiude */
+      view.querySelectorAll('[data-tile]').forEach(b=>b.onclick=()=>{
+        riepTile=(riepTile===b.dataset.tile)?null:b.dataset.tile; riepDett=null;
+        try{ if(riepTile)localStorage.setItem('ctm:riep-tile',riepTile); else localStorage.removeItem('ctm:riep-tile'); }catch(_){}
+        /* dentro il pannello il libro mastro e il controllo dati si vedono subito aperti */
+        if(riepTile==='saldo')riepAperti.mov=true;
+        if(riepTile==='sist')riepAperti.sist=true;
+        renderRiepilogo();
+        const pn=document.getElementById('tilePanel'); if(pn)pn.scrollIntoView({behavior:'smooth',block:'nearest'});
+      });
       /* riparazioni in blocco delle giornate registrate con il modello vecchio */
       /* «non autorizzate»: le ore fuori fascia restano registrate ma non contano,
          e la giornata smette di comparire fra quelle da decidere */
