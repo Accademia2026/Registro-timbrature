@@ -4001,7 +4001,7 @@ import * as repo from './js/repo.js';
       sist:'<path d="M12 4l9 16H3z"></path><path d="M12 10v4M12 17v.5"></path>',
       assenze:'<circle cx="12" cy="12" r="4"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"></path>',
       mc:'<path d="M9 18V5l10-2v13"></path><circle cx="6.5" cy="18" r="2.5"></circle><circle cx="16.5" cy="16" r="2.5"></circle>',
-      credito:'<path d="M3 17l6-6 4 4 8-8M15 7h6v6"></path>',
+      settcorr:'<circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path>',
       settimane:'<rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path>',
     };
     function riepTilesHTML(c){
@@ -4009,13 +4009,20 @@ import * as repo from './js/repo.js';
       const p=problemiDati();
       const nSist=p.vuote.length+p.fuori.length+p.mancanti.length+p.mcMano.length+p.tipiVecchi.length;
       const mcTot=somma(w=>w.mc), cred=somma(w=>w.credito), fuori=somma(w=>w.fuori);
+      /* la settimana in corso: fatte, dovute e scarto, il numero che si guarda ogni giorno */
+      const cwMon=thisWeekMon(), cw=weekInfo(cwMon);
       const tile=(id,lab,val,cls)=>'<button class="tile'+(riepTile===id?' is-on':'')+'" data-tile="'+id+'">'
         +'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+TILE_ICO[id]+'</svg>'
         +'<span class="tile__k">'+lab+'</span><span class="tile__v num '+(cls||'')+'">'+val+'</span></button>';
       const rg=(dett,lab,val,cls)=>'<div class="row row--tap" data-dett="'+dett+'"><span class="row__label">'+lab+'</span><span class="row__value '+(cls||'')+'">'+val+'</span></div>';
       const rs=(lab,val,cls)=>'<div class="row"><span class="row__label">'+lab+'</span><span class="row__value '+(cls||'')+'">'+val+'</span></div>';
       const pannello={
-        saldo:()=>'<div class="group">'+rg('saldo','Settimana per settimana',fmtHM(c.bal,true),c.bal<0?'neg':'pos')+'</div>'
+        /* il credito lordo resta leggibile qui, sotto il saldo che lo riassume */
+        saldo:()=>'<div class="group">'+rg('saldo','Settimana per settimana',fmtHM(c.bal,true),c.bal<0?'neg':'pos')
+          +rg('credito','Straordinario a credito',fmtHM(cred),'pos')
+          +rg('comp','Riposo compensativo <small class="muted">dal saldo</small>',fmtHM(c.wks.reduce((a,m)=>a+weekComp(m),0)))
+          +rg('fuori','Fuori orario <small class="muted">da decidere</small>',fmtHM(fuori),fuori?'neg':'')
+          +rg('noaut','In più, non autorizzati <small class="muted">promemoria</small>',fmtHM(somma(w=>w.fuoriNoAut)))+'</div>'
           +'<div id="saldoBox">'+saldoHTML()+'</div>',
         sist:()=>daSistemareHTML(),
         assenze:()=>'<div class="group">'
@@ -4026,11 +4033,7 @@ import * as repo from './js/repo.js';
           +rg('mc','Masterclass',fmtHM(mcTot)+' <small class="muted">su 40h</small>')
           +rg('pagato','Pagate <small class="muted">prime 20h</small>',fmtHM(somma(w=>w.mcPagate)))
           +rs('A credito <small class="muted">oltre le 20h</small>',fmtHM(somma(w=>w.mcCredito)),'pos')+'</div>',
-        credito:()=>'<div class="group">'
-          +rg('credito','Straordinario a credito',fmtHM(cred),'pos')
-          +rg('comp','Riposo compensativo <small class="muted">dal saldo</small>',fmtHM(c.wks.reduce((a,m)=>a+weekComp(m),0)))
-          +rg('fuori','Fuori orario <small class="muted">da decidere</small>',fmtHM(fuori),fuori?'neg':'')
-          +rg('noaut','In più, non autorizzati <small class="muted">promemoria</small>',fmtHM(somma(w=>w.fuoriNoAut)))+'</div>',
+        settcorr:()=>'<div class="group">'+settimanaHTML(cwMon)+'</div>',
         settimane:()=>'<div class="group">'+c.settimane+'</div>'
           +'<div class="group" style="margin-top:10px">'+rg('settimane','Sopra o sotto le ore',c.wks.length)
           +(c.vuote.length?rg('vuote','Senza timbrature <small class="muted">fuori dal saldo</small>',c.vuote.length,'neg'):'')+'</div>',
@@ -4043,7 +4046,7 @@ import * as repo from './js/repo.js';
           +tile('sist','Da sistemare',nSist,nSist?'neg':'pos')
           +tile('assenze','Ferie residue',c.ferieRes+' gg')
           +tile('mc','Masterclass',fmtHM(mcTot)+'<small> / 40h</small>')
-          +tile('credito','Credito',fmtHM(cred,true),'pos')
+          +tile('settcorr','Questa settimana',fmtHM(cw.tot)+'<small> / '+fmtHM(cw.obl)+'</small>',cw.c<0?'neg':'pos')
           +tile('settimane','Settimane',c.wks.length)
         +'</div>'
         +(riepTile&&pannello[riepTile]?'<div id="tilePanel">'+pannello[riepTile]()+'</div>':'');
