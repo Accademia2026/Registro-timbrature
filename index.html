@@ -3738,7 +3738,8 @@ import * as repo from './js/repo.js';
          ordine di data (il debito piu' vecchio prende il credito piu' vecchio) */
       const copri=(l,d)=>{ const q=Math.min(l.resto,d.scoperto); if(q<=0)return; l.resto-=q; d.scoperto-=q; l.usi.push({tipo:d.tipo,chiave:d.chiave,min:q,scelto:l.dest===chiaveDebito(d)}); d.coperto.push({lotto:l,min:q}); };
       for(const l of lotti){ if(!l.dest||l.resto<=0)continue; const d=debiti.find(x=>chiaveDebito(x)===l.dest); if(d)copri(l,d); }
-      for(const d of debiti){ if(d.scoperto<=0)continue; for(const l of lotti){ if(d.scoperto<=0)break; if(l.resto>0)copri(l,d); } }
+      /* i lotti "nessuno" non ripianano niente: restano a credito, disponibili per un riposo */
+      for(const d of debiti){ if(d.scoperto<=0)continue; for(const l of lotti){ if(d.scoperto<=0)break; if(l.resto>0&&l.dest!=='nessuno')copri(l,d); } }
       _alloc={lotti,debiti,disponibili:lotti.filter(l=>l.resto>0)};
       return _alloc;
     }
@@ -3757,6 +3758,7 @@ import * as repo from './js/repo.js';
     }
     function etichettaRecupero(chiave){
       if(!chiave)return '';
+      if(chiave==='nessuno')return 'nulla';
       const d=allocazioniSaldo().debiti.find(x=>chiaveDebito(x)===chiave);
       return d?etichettaChiave(d.tipo,d.chiave):chiave;
     }
@@ -3795,7 +3797,10 @@ import * as repo from './js/repo.js';
     }
     /* menu nell'Orario di lavoro: vale per la fascia, quindi per ogni settimana */
     function opzioniRecuperoOrario(scelto){
+      /* "Nulla": non recupera nessun debito, resta a credito, e nella
+         comunicazione per la segreteria non si parla di debiti pregressi */
       return '<option value="">automatico · prima i debiti più vecchi</option>'
+        +'<option value="nessuno"'+(scelto==='nessuno'?' selected':'')+'>Nulla · resta a credito</option>'
         +menuDebiti(scelto||'',allocazioniSaldo().debiti,null);
     }
     function opzioniRecupero(key,e){
@@ -5930,7 +5935,8 @@ import * as repo from './js/repo.js';
         const cap=SD_[i].charAt(0).toUpperCase()+SD_[i].slice(1);
         const pr=piano[wd];
         const intestazione='• '+cap+', '+fascia(g.x)+' ('+fmtHM(g.xn)+'): ';
-        if(!pr)return intestazione+'a recupero dei debiti orari più vecchi ancora aperti.';
+        /* senza un debito scelto (automatico o "Nulla") la comunicazione non parla di debiti */
+        if(!pr)return null;
         if(pr.quota<=0)return intestazione+'il debito '+pr.eti+' risulta già recuperato: le ore restano a credito.';
         let t=intestazione+fmtHM(pr.quota)+' a recupero del debito · '+pr.eti+' ('+fmtHM(pr.debito.min)+', da recuperare '+fmtHM(pr.debito.scoperto)+')';
         t+=pr.resta>0?('; dopo questa giornata restano '+fmtHM(pr.resta)+' da recuperare.')
@@ -5973,7 +5979,7 @@ import * as repo from './js/repo.js';
         '• Presenza ordinaria '+fmtHM(v.pres)+' + studio '+fmtHM(v.stud)+(v.oltre?' + Masterclass oltre il tetto '+fmtHM(v.oltre):'')+' = '+fmtHM(v.tot)+' (obbligo settimanale 36 ore).',
       ];
       if(haMC) note.push('• Masterclass (funzioni aggiuntive): '+fmtHM(v.mc)+' settimanali'+(v.oltre?', di cui '+fmtHM(v.oltre)+' oltre il tetto delle 9 ore di straordinario, che riducono di pari misura la presenza ordinaria':'')+'.');
-      if(v.stra) note.push('• Straordinario ordinario programmato: '+fmtHM(v.stra)+' settimanali (limite 9 ore), non retribuito: va a credito e recupera il debito orario indicato qui sotto.');
+      if(v.stra) note.push('• Straordinario ordinario programmato: '+fmtHM(v.stra)+' settimanali (limite 9 ore), non retribuito: va a credito'+(recRighe.length?' e recupera il debito orario indicato qui sotto.':'.'));
       if(haMC||v.stra) note.push('• Totale complessivo: '+fmtHM(v.totAll)+' settimanali (limite 45 ore).');
       note.forEach(t=>{const r=doc.splitTextToSize(t, W-2*M); doc.text(r, M, y); y+=r.length*5+1.5;});
       /* comunicazione preventiva: quale debito recupera lo straordinario programmato */
