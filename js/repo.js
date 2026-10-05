@@ -160,6 +160,7 @@ export async function loadAll() {
       notify: r.avviso_min,
       note: r.nota || '',
       countTeacher: !!r.conta_docente,
+      kind: r.genere || '',           /* '' attivita' · 'blocco' · 'promemoria' */
     })),
   };
 }
@@ -511,13 +512,31 @@ const evtRow = (ev) => ({
   avviso_min: ev.notify ?? null,
   conta_docente: !!ev.countTeacher,
   nota: orNull(ev.note),
+  genere: orNull(ev.kind),
 });
+/* Colonna "genere" non ancora creata (script 15 non eseguito): un'attivita'
+   normale si salva lo stesso senza quel campo; un blocco o un promemoria no,
+   perche' senza il genere diventerebbero attivita' qualsiasi. */
+const senzaGenere = (riga) => { const { genere, ...resto } = riga; return resto; };
+const mancaGenere = (r) => r && r.error && /genere/.test(r.error.message || '');
+const serveScript15 = () => { const e = { message: 'Per blocchi e promemoria serve lo script 15' }; onError('salvataggio attività', e); return e; };
 export async function insertEvento(ev) {
-  const r = await supabase.from('eventi').insert(evtRow(ev)).select('id').single();
+  const riga = evtRow(ev);
+  let r = await supabase.from('eventi').insert(riga).select('id').single();
+  if (mancaGenere(r)) {
+    if (riga.genere) throw serveScript15();
+    r = await supabase.from('eventi').insert(senzaGenere(riga)).select('id').single();
+  }
   return String(check('creazione attività', r).id);
 }
 export async function updateEvento(id, ev) {
-  check('modifica attività', await supabase.from('eventi').update(evtRow(ev)).eq('id', id));
+  const riga = evtRow(ev);
+  let r = await supabase.from('eventi').update(riga).eq('id', id);
+  if (mancaGenere(r)) {
+    if (riga.genere) throw serveScript15();
+    r = await supabase.from('eventi').update(senzaGenere(riga)).eq('id', id);
+  }
+  check('modifica attività', r);
 }
 export async function deleteEvento(id) {
   check('eliminazione attività', await supabase.from('eventi').delete().eq('id', id));
