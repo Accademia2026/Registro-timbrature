@@ -361,20 +361,20 @@
     .mobnav button svg{width:21px;height:21px}
     .mobnav button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .mobnav button.active{color:var(--accent)}
-    /* Attivita' e' il pulsante principale: piu' grande, e la barra si gonfia
-       in una cupola arrotondata sopra il suo simbolo. La cupola sta tutta
+    /* La sezione in cui ci si trova: l'icona si ingrandisce dentro un cerchio
+       pieno che sporge, e la barra si gonfia in una cupola arrotondata sopra
+       di lei. --nav-x (impostata da setView) dice dove. La cupola sta tutta
        SOPRA la barra (niente doppia trasparenza) e la riga di bordo si
        interrompe sotto di lei, cosi' barra e cupola sono un pezzo solo. */
     .mobnav{border-top:0}
     .mobnav::after{content:"";position:absolute;left:0;right:0;top:0;height:.5px;pointer-events:none;
-      background:linear-gradient(to right,var(--line) calc(50% - 40px),transparent calc(50% - 40px),transparent calc(50% + 40px),var(--line) calc(50% + 40px))}
-    .mobnav::before{content:"";position:absolute;left:50%;bottom:100%;width:80px;height:24px;transform:translateX(-50%);pointer-events:none;
+      background:linear-gradient(to right,var(--line) calc(var(--nav-x,10%) - 36px),transparent calc(var(--nav-x,10%) - 36px),transparent calc(var(--nav-x,10%) + 36px),var(--line) calc(var(--nav-x,10%) + 36px))}
+    .mobnav::before{content:"";position:absolute;left:var(--nav-x,10%);bottom:100%;width:72px;height:24px;transition:left .22s ease;transform:translateX(-50%);pointer-events:none;
       background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(var(--blur,20px));backdrop-filter:saturate(180%) blur(var(--blur,20px));
-      border:.5px solid var(--line);border-bottom:0;border-radius:40px 40px 0 0 / 24px 24px 0 0}
-    .mobnav button[data-v="attivita"]{position:relative;margin-top:-28px;gap:4px;overflow:visible}
-    .mobnav button[data-v="attivita"] svg{width:26px;height:26px;padding:11px;box-sizing:content-box;border-radius:50%;
+      border:.5px solid var(--line);border-bottom:0;border-radius:36px 36px 0 0 / 24px 24px 0 0}
+    .mobnav button.active{position:relative;margin-top:-28px;gap:4px;overflow:visible}
+    .mobnav button.active svg{width:26px;height:26px;padding:11px;box-sizing:content-box;border-radius:50%;
       background:var(--teal,var(--accent));color:var(--teal-ink,#fff);box-shadow:0 4px 12px rgba(0,0,0,.18)}
-    .mobnav button[data-v="attivita"].active svg{box-shadow:0 0 0 3px var(--bar),0 0 0 4.5px var(--teal,var(--accent)),0 4px 12px rgba(0,0,0,.18)}
     .topbar{padding:15px 18px;flex-wrap:wrap}
     .topbar h1{font-size:20px}
     .topbar-right{gap:10px}
@@ -3598,6 +3598,12 @@ import * as repo from './js/repo.js';
       clearInterval(clockTimer);
       closeKeypad();
       document.querySelectorAll('#nav button,#mobnav button').forEach(b=>b.classList.toggle('active',b.dataset.v===v));
+      /* la cupola della barra in basso segue la sezione attiva: centro del
+         pulsante in percentuale, cosi' resta giusto anche ruotando il telefono */
+      const mn=document.getElementById('mobnav');
+      if(mn){ const bs=[...mn.querySelectorAll('button')], i=bs.findIndex(b=>b.dataset.v===v);
+        /* sezione fuori dalla barra (es. Impostazioni): nessuna cupola */
+        mn.style.setProperty('--nav-x', i>=0 ? 'calc(4px + (100% - 8px) * '+((i+0.5)/bs.length)+')' : '-200px'); }
       const titles={riepilogo:'Riepilogo',registro:'Timbrature',attivita:'Registro attività',permessi:'Permessi e assenze',orario:'Orario di lavoro',impostazioni:'Impostazioni'};
       document.getElementById('title').textContent=titles[v];
       document.getElementById('crumb').textContent=titles[v];
