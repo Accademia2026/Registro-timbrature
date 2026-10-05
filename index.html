@@ -490,6 +490,19 @@
     background:repeating-linear-gradient(45deg,rgba(128,128,128,.26),rgba(128,128,128,.26) 6px,rgba(128,128,128,.10) 6px,rgba(128,128,128,.10) 12px)}
   #appRoot .event.blocco .et{font-weight:600;opacity:.85}
   #appRoot .event.promem{border-radius:999px;padding-top:1px;padding-bottom:1px}
+  /* finestra attivita': data e orari, stesse misure su tutti i telefoni.
+     iOS disegna date e ore a modo suo (centrate, piu' strette): si azzera
+     l'aspetto nativo e si fissano altezza, larghezza e allineamento. */
+  .when{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px 8px;align-items:end}
+  .when .w-date,.when .w-dur{grid-column:1/-1}
+  .when .mfield{min-width:0;margin:0}
+  .when .w-arrow{padding-bottom:13px;color:var(--muted);font-size:18px;line-height:1}
+  .when.solo .w-arrow{display:none}
+  .when.solo .w-start{grid-column:1/-1}
+  .when input[type=date],.when input[type=time]{-webkit-appearance:none;appearance:none;display:block;width:100%;min-width:0;max-width:100%;
+    box-sizing:border-box;height:50px;padding:0 14px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;text-align:left;line-height:50px}
+  .when input::-webkit-date-and-time-value{text-align:left;margin:0}
+  .when .w-dur{font-size:12.5px;color:var(--muted);margin-top:-4px;min-height:16px}
   /* ricerca attivita' */
   .cerca-box{margin:0 0 8px}
   .cerca-box input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:10px 14px;border-radius:12px;
@@ -5022,10 +5035,14 @@ import * as repo from './js/repo.js';
           +'<div class="mfield" id="teacherCountBox" style="display:none">'
             +'<label class="mcheck"><input type="checkbox" id="mCountTeacher" '+(ev&&ev.countTeacher?'checked':'')+'> Conteggia l\'ora anche per il docente <b id="mTeacherName"></b></label>'
           +'</div>'
-          +'<div class="mrow" style="flex-wrap:wrap">'
-            +'<div class="mfield" style="flex:1 1 100%"><label>Data</label><input type="date" id="mDate" value="'+dISO+'"></div>'
-            +'<div class="mfield" style="flex:1 1 110px"><label>Dalle</label><input type="time" id="mStart" value="'+start+'"></div>'
-            +'<div class="mfield" id="endBox" style="flex:1 1 110px"><label>Alle</label><input type="time" id="mEnd" value="'+end+'"></div>'
+          /* quando: data a tutta larghezza, sotto inizio → fine alla stessa
+             altezza e grandezza, con la durata calcolata */
+          +'<div class="when" id="whenBox">'
+            +'<div class="mfield w-date"><label>Data</label><input type="date" id="mDate" value="'+dISO+'"></div>'
+            +'<div class="mfield w-start"><label id="mStartLab">Dalle</label><input type="time" id="mStart" value="'+start+'"></div>'
+            +'<span class="w-arrow" aria-hidden="true">→</span>'
+            +'<div class="mfield" id="endBox"><label>Alle</label><input type="time" id="mEnd" value="'+end+'"></div>'
+            +'<div class="w-dur" id="wDur"></div>'
           +'</div>'
           +'<label class="mcheck"><input type="checkbox" id="mRepeat" '+(ev&&ev.mode==='weekly'?'checked':'')+'> Ripeti ogni settimana</label>'
           +'<div class="mfield" id="untilBox" style="display:'+(ev&&ev.mode==='weekly'?'flex':'none')+'"><label>Fino al (facoltativo)</label><input type="date" id="mUntil" value="'+(ev&&ev.until?ev.until:'')+'"></div>'
@@ -5046,6 +5063,13 @@ import * as repo from './js/repo.js';
         const p=personById(sel.value); return (p&&p.role==='alunno'&&p.teacherId)?personById(p.teacherId):null;
       }
       const el=id=>document.getElementById(id);
+      let avvisoAuto=false;
+      el('mNotify').addEventListener('change',()=>{avvisoAuto=false;});
+      function durata(){
+        const s=t2m(el('mStart').value), e=t2m(el('mEnd').value);
+        el('wDur').textContent=(mKind!=='promemoria'&&s!=null&&e!=null&&e>s)?'Durata '+fmtHM(e-s):'';
+      }
+      el('mStart').addEventListener('input',durata); el('mEnd').addEventListener('input',durata);
       function sync(){
         const att=mKind==='', blocco=mKind==='blocco', prom=mKind==='promemoria';
         el('mTitolo').textContent=(ev?'Modifica ':(blocco?'Nuovo ':prom?'Nuovo ':'Nuova '))+(blocco?'blocco orario':prom?'promemoria':'attività');
@@ -5057,6 +5081,9 @@ import * as repo from './js/repo.js';
         el('mTitle').placeholder=blocco?'es. Non disponibile, Lezione altrove…':prom?'es. Consegnare il modulo ferie':'es. Riunione, Prove d’orchestra, Segreteria…';
         el('npTeacherBox').style.display=(att&&sel.value==='__new'&&npRole.value==='alunno')?'flex':'none';
         el('endBox').style.display=prom?'none':'';
+        el('whenBox').classList.toggle('solo',prom);
+        el('mStartLab').textContent=prom?'Alle ore':'Dalle';
+        durata();
         el('notifyBox').style.display=blocco?'none':'flex';
         const t=att?effTeacher():null, box=el('teacherCountBox');
         if(t){box.style.display='flex';el('mTeacherName').textContent=t.name;}
@@ -5064,8 +5091,10 @@ import * as repo from './js/repo.js';
       }
       el('mKindSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
         mKind=b.dataset.mkind;
-        /* un promemoria senza avviso non serve: parte con "All'inizio" */
-        if(mKind==='promemoria'&&el('mNotify').value==='')el('mNotify').value='0';
+        /* un promemoria senza avviso non serve: parte con "All'inizio"; se poi
+           si torna ad Attivita' quell'avviso messo in automatico si toglie */
+        if(mKind==='promemoria'&&el('mNotify').value===''){el('mNotify').value='0';avvisoAuto=true;}
+        else if(mKind!=='promemoria'&&avvisoAuto){el('mNotify').value='';avvisoAuto=false;}
         sync();
       });
       sel.onchange=sync; npRole.onchange=sync; document.getElementById('npTeacher').onchange=sync;
