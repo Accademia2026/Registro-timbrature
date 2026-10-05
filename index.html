@@ -509,6 +509,19 @@
   .cal-aiuto .aiuto-btn{pointer-events:none}
   #calInfo,#calLeg{margin:0 0 12px}
   .lg-dot.blocco{border:1px dashed var(--line-strong,var(--line));background:repeating-linear-gradient(45deg,rgba(128,128,128,.4),rgba(128,128,128,.4) 2px,transparent 2px,transparent 4px)}
+  /* Attivita', parte alta snella: settimana grande in cima, schede come voci
+     sottolineate, lente in fondo alla riga */
+  .weeknav--c{align-items:flex-end;margin-bottom:12px}
+  .weeknav--c .weeklabel{display:flex;flex-direction:column;line-height:1.1;font-size:inherit;font-weight:400;letter-spacing:0}
+  .weeknav--c .weeklabel .yr{margin:0 0 2px;font-size:13px;color:var(--muted);font-weight:600}
+  .weeknav--c .weeklabel b{font-size:30px;font-weight:700;letter-spacing:-.6px}
+  .weeknav--c .iconbtn{display:inline-grid;place-items:center}
+  .att-tabs{display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--line);margin:0 0 14px}
+  .att-tabs button{background:none;border:0;padding:8px 0 9px;font:inherit;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;margin-bottom:-1px;border-bottom:2px solid transparent;white-space:nowrap}
+  .att-tabs button.active{color:var(--ink);border-bottom-color:var(--teal,var(--accent))}
+  .att-tabs .att-lente{margin-left:auto;padding:6px;display:inline-grid;place-items:center;border-bottom-color:transparent!important}
+  .att-tabs .att-lente svg{width:19px;height:19px}
+  .att-tabs .att-lente.active{color:var(--teal,var(--accent))}
   /* ricerca attivita' */
   .cerca-box{margin:0 0 8px}
   .cerca-box input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:10px 14px;border-radius:12px;
@@ -4720,7 +4733,7 @@ import * as repo from './js/repo.js';
     }
     function dayEventsFor(dISO){return DB.events.filter(ev=>eventOccursOn(ev,dISO));}
     /* ricerca nelle attivita': nome o descrizione, nota, docente collegato */
-    let attCerca='';
+    let attCerca='', attCercaAperta=false;
     function cercaAttivita(q){
       const s=(q||'').trim().toLowerCase(); if(!s)return [];
       const testo=ev=>{const p=personById(ev.personId); const doc=p&&p.teacherId&&personById(p.teacherId);
@@ -4755,20 +4768,23 @@ import * as repo from './js/repo.js';
 
     let attTab='calendario';
     function renderAttivita(){
-      const seg='<div class="seg">'
+      /* schede come voci sottolineate; nel calendario in fondo alla riga c'e'
+         la lente, che apre il campo di ricerca solo quando serve */
+      const seg='<div class="att-tabs">'
          +'<button data-t="calendario" class="'+(attTab==='calendario'?'active':'')+'">Calendario</button>'
          +'<button data-t="ore" class="'+(attTab==='ore'?'active':'')+'">Ore per persona</button>'
          +'<button data-t="persone" class="'+(attTab==='persone'?'active':'')+'">Persone</button>'
+         +(attTab==='calendario'?'<button class="att-lente'+(attCercaAperta||attCerca?' active':'')+'" id="attLente" aria-label="Cerca un’attività"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg></button>':'')
        +'</div>';
-      let inner = attTab==='calendario'?calendarHTML():attTab==='ore'?hoursHTML():peopleHTML();
-      view.innerHTML=seg+inner;
-      view.querySelectorAll('.seg button').forEach(b=>b.onclick=()=>{attTab=b.dataset.t;renderAttivita();});
+      /* nel calendario la settimana sta in cima, grande, e le schede sotto */
+      view.innerHTML = attTab==='calendario'?calendarHTML(seg):seg+(attTab==='ore'?hoursHTML():peopleHTML());
+      view.querySelectorAll('.att-tabs [data-t]').forEach(b=>b.onclick=()=>{attTab=b.dataset.t;renderAttivita();});
       view.querySelectorAll('[data-scheda]').forEach(el=>el.onclick=()=>schedaPersona(el.dataset.scheda));
       if(attTab==='calendario')wireCalendar();
       else if(attTab==='persone')wirePeople();
     }
 
-    function calendarHTML(){
+    function calendarHTML(tabs){
       if(!diaryCursor)diaryCursor=iso(mondayOf(new Date()));
       const mon=parseISO(diaryCursor),sun=addDays(mon,6),todayISO=iso(new Date());
       const range = mon.getMonth()===sun.getMonth()
@@ -4812,16 +4828,21 @@ import * as repo from './js/repo.js';
         });
         cell+='</div>'; cols+=cell;
       }
-      return '<div class="weeknav">'
-          +'<div class="weeklabel">'+range+'<span class="yr">'+mon.getFullYear()+'</span></div>'
+      const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+      const sopra=mon.getMonth()===sun.getMonth()
+          ? cap(MONTHS[sun.getMonth()])+' '+sun.getFullYear()
+          : cap(MONTHS[mon.getMonth()].slice(0,3))+' – '+MONTHS[sun.getMonth()].slice(0,3)+' '+sun.getFullYear();
+      return '<div class="weeknav weeknav--c">'
+          +'<div class="weeklabel"><span class="yr">'+sopra+'</span><b>'+mon.getDate()+'–'+sun.getDate()+'</b></div>'
           +'<div class="arrows">'
             +'<button class="iconbtn" id="cPrev" aria-label="settimana precedente">‹</button>'
-            +'<button class="iconbtn" id="cToday" style="width:auto;padding:0 14px;font-size:13px">Oggi</button>'
+            +'<button class="iconbtn" id="cToday" aria-label="vai a oggi" title="Oggi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><rect x="3" y="4" width="18" height="18" rx="2"></rect><path d="M3 9h18M8 2v4M16 2v4"></path><circle cx="12" cy="15" r="1.6" fill="currentColor"></circle></svg></button>'
             +'<button class="iconbtn" id="cNext" aria-label="settimana successiva">›</button>'
           +'</div>'
         +'</div>'
+        +(tabs||'')
         +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc(evName(appunti.ev))+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
-        +'<div class="cerca-box"><input type="search" id="attCerca" class="note" placeholder="Cerca un’attività…" value="'+esc(attCerca)+'" autocomplete="off"></div>'
+        +'<div class="cerca-box" id="cercaBox"'+(attCercaAperta||attCerca?'':' hidden')+'><input type="search" id="attCerca" class="note" placeholder="Cerca un’attività…" value="'+esc(attCerca)+'" autocomplete="off"></div>'
         +'<div id="cercaOut">'+risultatiCercaHTML()+'</div>'
         /* due aiuti a scomparsa: "?" Info (come si usa) e "i" Legenda colori */
         +'<div class="cal-aiuti">'
@@ -4842,6 +4863,14 @@ import * as repo from './js/repo.js';
         diaryCursor=iso(mondayOf(parseISO(ev.date))); renderAttivita(); schedaEvento(ev);
       });
       if(inp){ inp.addEventListener('input',()=>{attCerca=inp.value; out.innerHTML=risultatiCercaHTML(); wireHits();}); wireHits(); }
+      /* la lente apre e chiude il campo; chiudendolo la ricerca si azzera */
+      const lente=document.getElementById('attLente'), box=document.getElementById('cercaBox');
+      if(lente&&box)lente.onclick=()=>{
+        attCercaAperta=box.hidden;
+        box.hidden=!attCercaAperta; lente.classList.toggle('active',attCercaAperta);
+        if(attCercaAperta)inp.focus();
+        else { attCerca=''; inp.value=''; out.innerHTML=''; }
+      };
       document.getElementById('cPrev').onclick=()=>{diaryCursor=iso(addDays(mon,-7));renderAttivita();};
       document.getElementById('cNext').onclick=()=>{diaryCursor=iso(addDays(mon,7));renderAttivita();};
       document.getElementById('cToday').onclick=()=>{diaryCursor=iso(mondayOf(new Date()));renderAttivita();};
