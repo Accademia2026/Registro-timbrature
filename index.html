@@ -503,6 +503,12 @@
     box-sizing:border-box;height:50px;padding:0 14px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums;text-align:left;line-height:50px}
   .when input::-webkit-date-and-time-value{text-align:left;margin:0}
   .when .w-dur{font-size:12.5px;color:var(--muted);margin-top:-4px;min-height:16px}
+  /* calendario: riga degli aiuti a scomparsa ("?" Info, "i" Legenda colori) */
+  .cal-aiuti{display:flex;align-items:center;flex-wrap:wrap;gap:6px 16px;margin:0 0 10px}
+  .cal-aiuto{display:inline-flex;align-items:center;gap:6px;background:none;border:0;padding:4px 0;font:inherit;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer}
+  .cal-aiuto .aiuto-btn{pointer-events:none}
+  #calInfo,#calLeg{margin:0 0 12px}
+  .lg-dot.blocco{border:1px dashed var(--line-strong,var(--line));background:repeating-linear-gradient(45deg,rgba(128,128,128,.4),rgba(128,128,128,.4) 2px,transparent 2px,transparent 4px)}
   /* ricerca attivita' */
   .cerca-box{margin:0 0 8px}
   .cerca-box input{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:10px 14px;border-radius:12px;
@@ -4817,8 +4823,14 @@ import * as repo from './js/repo.js';
         +(appunti?'<div class="authbox" style="margin:0 0 12px"><span>📋 <b>'+esc(evName(appunti.ev))+'</b> '+appunti.ev.start+'–'+appunti.ev.end+' negli appunti: tocca uno spazio libero per '+(appunti.taglia?'spostarla':'incollarla')+'.</span><span style="flex:1"></span><button class="ilink" id="appAnnulla">Annulla</button></div>':'')
         +'<div class="cerca-box"><input type="search" id="attCerca" class="note" placeholder="Cerca un’attività…" value="'+esc(attCerca)+'" autocomplete="off"></div>'
         +'<div id="cercaOut">'+risultatiCercaHTML()+'</div>'
-        +'<p class="diary-intro"><span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot stra"></span> straordinario · <span class="lg-dot mc"></span> Masterclass <button class="linkbtn" id="btnIcs" style="padding:2px 6px;margin-left:8px">⤓ Esporta calendario</button></p>'
-        +'<p class="sec-d">Tocca uno spazio libero per creare un\'attività; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana.</p>'
+        /* due aiuti a scomparsa: "?" Info (come si usa) e "i" Legenda colori */
+        +'<div class="cal-aiuti">'
+          +'<button type="button" class="cal-aiuto" data-apri="calInfo"><span class="aiuto-btn">?</span>Info</button>'
+          +'<button type="button" class="cal-aiuto" data-apri="calLeg"><span class="aiuto-btn">i</span>Legenda colori</button>'
+          +'<button class="linkbtn" id="btnIcs" style="padding:2px 6px;margin-left:auto">⤓ Esporta calendario</button>'
+        +'</div>'
+        +'<p class="sec-d" id="calInfo" data-aiuto="1" hidden>Tocca uno spazio libero per creare un\'attività, un blocco orario o un promemoria; trascina un evento per spostarlo; tieni premuto per copiare, tagliare o eliminare; scorri di lato per cambiare settimana.</p>'
+        +'<p class="diary-intro" id="calLeg" hidden><span class="lg-dot pres"></span> presenza · <span class="lg-dot study"></span> studio · <span class="lg-dot stra"></span> straordinario · <span class="lg-dot mc"></span> Masterclass · <span class="lg-dot blocco"></span> blocco orario</p>'
         +'<div class="cal-wrap"><div class="cal"><div class="cal-head">'+head+'</div><div class="cal-body">'+gutter+cols+'</div></div></div>';
     }
     function wireCalendar(){
@@ -4845,6 +4857,11 @@ import * as repo from './js/repo.js';
       }));
       const annulla=document.getElementById('appAnnulla'); if(annulla)annulla.onclick=()=>{appunti=null;renderAttivita();};
       const ics=document.getElementById('btnIcs'); if(ics)ics.onclick=esportaICS;
+      /* "?" Info e "i" Legenda colori: un tocco apre il testo, un altro lo chiude */
+      view.querySelectorAll('.cal-aiuto').forEach(b=>b.onclick=()=>{
+        const p=document.getElementById(b.dataset.apri); if(!p)return;
+        p.hidden=!p.hidden; b.querySelector('.aiuto-btn').classList.toggle('is-on',!p.hidden);
+      });
       /* swipe orizzontale sul calendario = settimana precedente/successiva */
       const wrap=view.querySelector('.cal-wrap'); let sw=null;
       if(wrap){
